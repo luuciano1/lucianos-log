@@ -160,6 +160,8 @@ button:focus-visible, .row:focus-visible { outline: 2px solid var(--ink); outlin
 .pickgrid button { padding: 0; border: 2px solid transparent; background: none; cursor: pointer; line-height: 0; }
 .pickgrid button:hover, .pickgrid button:focus-visible { border-color: currentColor; }
 .pickgrid img { width: 100%; height: auto; display: block; }
+.hist { display: grid; gap: 6px; margin: 10px 0 0; }
+.hist .btn { justify-content: flex-start; text-align: left; }
 .fmtbar { display: flex; gap: 6px; margin: 0 0 6px; }
 .fmt { min-width: 38px; height: 34px; padding: 0 10px; border: 1px solid var(--line, currentColor); background: transparent; color: inherit; border-radius: 6px; font: 600 15px/1 var(--sans); cursor: pointer; }
 .fmt:hover { background: rgb(128 128 128 / .15); }
@@ -274,6 +276,10 @@ a.btn { display: inline-block; text-decoration: none; }
     <input type="file" id="importFile" accept="application/json,.json" hidden>
     <input type="file" id="lbFile" accept=".csv,text/csv" multiple hidden>
     <p class="hint" id="backupStatus" role="status"></p>
+    <div class="art-actions">
+      <button type="button" class="btn ghost small" id="histBtn">Restore covers from an older publish</button>
+    </div>
+    <div id="histList" class="hist" hidden></div>
   </section>
 </div>
 
@@ -774,31 +780,116 @@ a.btn { display: inline-block; text-decoration: none; }
       if (!res.ok) { if (!quiet) backupStatus("Couldn't find entries.json on the site (" + res.status + ")."); return 0; }
       var data = await res.json();
       if (!data || data.app !== "watched-and-heard" || !Array.isArray(data.entries)) { if (!quiet) backupStatus("entries.json isn't in the right format."); return 0; }
-      var have = {}; state.entries.forEach(function (e) { have[e.id] = 1; });
-      var art = data.art && typeof data.art === "object" ? data.art : {}, list = [], skipped = 0;
+      var have = {}, cur = {}; state.entries.forEach(function (e) { have[e.id] = 1; cur[e.id] = e; });
+      var art = data.art && typeof data.art === "object" ? data.art : {}, list = [], skipped = 0, restored = 0;
+      async function grab(aid) {
+        var du = art[aid], src = typeof du === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(du) ? du : "art/" + aid + ".jpg?t=" + Date.now();
+        var r = await fetch(src, { cache: "no-store" }); if (!r.ok) throw new Error("img");
+        var b = await r.blob(); if (!/^image\//.test(b.type) && !/^data:/.test(src)) throw new Error("notimg");
+        await localAssets.putWithId(aid, b);
+      }
       for (var i = 0; i < data.entries.length; i++) {
         var raw = data.entries[i];
         if (!raw || typeof raw !== "object") continue;
         var id = typeof raw.id === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(raw.id) ? raw.id : "p" + randHex().slice(0, 12);
-        if (have[id]) { skipped++; continue; }
+        if (have[id]) {
+          var pe = norm(id, raw), le = cur[id];
+          if (pe.art && !artSrc(pe.art)) {
+            if (!quiet) backupStatus("Restoring covers... " + (restored + 1));
+            try {
+              await grab(pe.art);
+              if (le.art !== pe.art) {
+                list.push({ id: le.id, medium: le.medium, title: le.title, creator: le.creator, kind: le.kind, released: le.released, genre: le.genre,
+                  rating: le.rating, review: le.review, loggedOn: le.loggedOn, again: le.again, year: le.year, createdAt: le.createdAt, art: pe.art });
+              }
+              restored++;
+            } catch (x) {}
+          }
+          skipped++; continue;
+        }
         var e = norm(id, raw);
         if (e.art && !artSrc(e.art)) {
           if (!quiet) backupStatus("Loading covers " + (i + 1) + " of " + data.entries.length + "...");
           try {
-            var du = art[e.art], src = typeof du === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(du) ? du : "art/" + e.art + ".jpg";
-            var r = await fetch(src); if (!r.ok) throw new Error("img");
-            await localAssets.putWithId(e.art, await r.blob());
+            await grab(e.art);
           } catch (x) { e.art = ""; }
         }
         list.push({ id: id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
           rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: e.art });
       }
       if (list.length) store.upsertMany(list);
-      backupStatus("Loaded " + list.length + (list.length === 1 ? " published entry" : " published entries") + (skipped ? " (" + skipped + " were already here)" : "") + ".");
-      return list.length;
+      var added = list.filter(function (x) { return !have[x.id]; }).length;
+      backupStatus("Added " + added + (added === 1 ? " published entry" : " published entries") + (restored ? " and restored " + restored + " covers from your repo" : "") + ".");
+      return list.length + restored;
     } catch (x) { if (!quiet) backupStatus("Couldn't load the published entries."); return 0; }
   }
   $("#pullBtn").addEventListener("click", function () { loadPublished(false); });
+
+  /* ---------- restore covers from GitHub history ---------- */
+  function b64bytes(b64) { var bin = atob(b64.replace(/\s/g, "")), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+  var histBusy = false;
+  async function listHistory() {
+    var cfg = loadPub(), box = $("#histList");
+    if (!cfg || !cfg.token || !cfg.repo) { backupStatus("Add your repository and token in Publish settings first."); return; }
+    if (histBusy) return; histBusy = true;
+    backupStatus("Looking through your past publishes..."); box.hidden = true; box.replaceChildren();
+    try {
+      var branch = (cfg.branch || "main").trim() || "main";
+      var commits = await gh(cfg, "GET", "/commits?sha=" + encodeURIComponent(branch) + "&per_page=40");
+      var snaps = [];
+      for (var i = 0; i < commits.length; i++) {
+        backupStatus("Checking publish " + (i + 1) + " of " + commits.length + "...");
+        var c = commits[i], tree = await gh(cfg, "GET", "/git/trees/" + c.commit.tree.sha + "?recursive=1"), files = {};
+        tree.tree.forEach(function (t) { if (t.type === "blob") files[t.path] = t.sha; });
+        var n = Object.keys(files).filter(function (p) { return /^art\/[0-9a-f]{32}\.jpg$/.test(p); }).length;
+        if (!n || !files["entries.json"]) continue;
+        var key = Object.keys(files).filter(function (p) { return /^art\//.test(p); }).sort().join("|") + files["entries.json"];
+        if (snaps.length && snaps[snaps.length - 1].key === key) continue;
+        snaps.push({ key: key, sha: c.sha, date: c.commit.author && c.commit.author.date, files: files, n: n });
+      }
+      if (!snaps.length) { backupStatus("None of your recent publishes have covers saved in them."); histBusy = false; return; }
+      snaps.forEach(function (sn) {
+        var d = sn.date ? new Date(sn.date) : null;
+        var label = (d ? d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : sn.sha.slice(0, 7)) + " · " + sn.n + " covers in the repo";
+        box.appendChild(h("button", { class: "btn ghost small", type: "button", onclick: function () { restoreSnapshot(cfg, sn); } }, label));
+      });
+      box.hidden = false;
+      backupStatus("Pick the publish from before your posters went missing. Only covers change; your reviews and ratings stay as they are now.");
+    } catch (err) { backupStatus(ghError(err)); }
+    histBusy = false;
+  }
+  async function restoreSnapshot(cfg, sn) {
+    if (histBusy) return; histBusy = true;
+    try {
+      backupStatus("Reading that publish...");
+      var ej = await gh(cfg, "GET", "/git/blobs/" + sn.files["entries.json"]);
+      var old = JSON.parse(new TextDecoder().decode(b64bytes(ej.content)));
+      var byId = {}, byTitle = {};
+      (old.entries || []).forEach(function (o) {
+        if (!o || typeof o.art !== "string" || !sn.files["art/" + o.art + ".jpg"]) return;
+        byId[o.id] = o.art;
+        byTitle[(String(o.title || "").toLowerCase()) + "|" + (o.medium === "film" ? "film" : "music")] = o.art;
+      });
+      var list = [], done = 0, total = state.entries.length;
+      for (var i = 0; i < state.entries.length; i++) {
+        var e = state.entries[i], aid = byId[e.id] || byTitle[e.title.toLowerCase() + "|" + e.medium];
+        if (!aid) continue;
+        backupStatus("Restoring covers... " + (done + 1));
+        if (!artSrc(aid)) {
+          var b = await gh(cfg, "GET", "/git/blobs/" + sn.files["art/" + aid + ".jpg"]);
+          await localAssets.putWithId(aid, new Blob([b64bytes(b.content)], { type: "image/jpeg" }));
+        }
+        if (e.art !== aid) list.push({ id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
+          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: aid });
+        done++;
+      }
+      if (list.length) store.upsertMany(list); else render();
+      $("#histList").hidden = true;
+      backupStatus("Restored " + done + " of " + total + " covers from that publish. Check them, then tap Publish to make it stick.");
+    } catch (err) { backupStatus(ghError(err)); }
+    histBusy = false;
+  }
+  $("#histBtn").addEventListener("click", listHistory);
 
   /* ---------- TMDB posters and details ---------- */
   var TMDB_KEY = "watched-heard-tmdb-v1";
@@ -1362,9 +1453,6 @@ a.btn { display: inline-block; text-decoration: none; }
       ents.push({ id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released,
         genre: e.genre, rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: art });
     }
-    Object.keys(existing).forEach(function (p) {
-      if (/^art\/[0-9a-f]{32}\.jpg$/.test(p) && !wanted[p]) items.push({ path: p, mode: "100644", type: "blob", sha: null });
-    });
     pubMsg("Saving entries...");
     var json = JSON.stringify({ app: "watched-and-heard", version: 2, publishedAt: new Date().toISOString(), entries: ents });
     var jb = await gh(cfg, "POST", "/git/blobs", { content: json, encoding: "utf-8" });
@@ -1470,7 +1558,7 @@ a.btn { display: inline-block; text-decoration: none; }
     } catch (e) { assets = null; }
     await seedOnce();
     store.start();
-    if (!store.count()) await loadPublished(true);
+    if (!store.count() || state.entries.some(function (e) { return e.art && !artSrc(e.art); })) await loadPublished(true);
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
   })();
 })();
