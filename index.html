@@ -156,6 +156,9 @@ button:focus-visible, .row:focus-visible { outline: 2px solid var(--ink); outlin
 .entry:has(.body) .meta { margin-top: 10px; }
 .body { display: flex; flex-direction: column; gap: 24px; padding: 28px 0 0; }
 .review { margin: 0; max-width: 60ch; white-space: pre-wrap; overflow-wrap: anywhere; font: 400 clamp(17px, 1.6vw, 20px)/1.55 var(--sans); letter-spacing: -.005em; }
+.fmtbar { display: flex; gap: 6px; margin: 0 0 6px; }
+.fmt { min-width: 38px; height: 34px; padding: 0 10px; border: 1px solid var(--line, currentColor); background: transparent; color: inherit; border-radius: 6px; font: 600 15px/1 var(--sans); cursor: pointer; }
+.fmt:hover { background: rgb(128 128 128 / .15); }
 .review.none { color: var(--ink-soft); }
 .foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 16px; border-top: 1px solid var(--rule); max-width: 60ch; }
 .logged { font: 500 10.5px/1.4 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); }
@@ -337,6 +340,11 @@ a.btn { display: inline-block; text-decoration: none; }
 
     <div class="f">
       <label for="f-review">Review</label>
+      <div class="fmtbar" role="toolbar" aria-label="Text formatting">
+        <button type="button" class="fmt" data-fmt="**" title="Bold (Ctrl+B)" aria-label="Bold"><b>B</b></button>
+        <button type="button" class="fmt" data-fmt="*" title="Italic (Ctrl+I)" aria-label="Italic"><i>I</i></button>
+        <button type="button" class="fmt" data-fmt="__" title="Underline (Ctrl+U)" aria-label="Underline"><u>U</u></button>
+      </div>
       <textarea class="in" id="f-review" placeholder="What did you think?"></textarea>
     </div>
 
@@ -432,6 +440,19 @@ a.btn { display: inline-block; text-decoration: none; }
   }
 
   function str(v) { return typeof v === "string" ? v : ""; }
+  function plainReview(t) { return String(t || "").replace(/\*\*|__|\*/g, ""); }
+  function richNodes(t) {
+    var out = [], re = /\*\*([\s\S]+?)\*\*|__([\s\S]+?)__|\*([\s\S]+?)\*/g, last = 0, m;
+    while ((m = re.exec(t))) {
+      if (m.index > last) out.push(document.createTextNode(t.slice(last, m.index)));
+      var tag = m[1] != null ? "strong" : m[2] != null ? "u" : "em", inner = m[1] != null ? m[1] : m[2] != null ? m[2] : m[3];
+      var el = document.createElement(tag);
+      richNodes(inner).forEach(function (n) { el.appendChild(n); });
+      out.push(el); last = re.lastIndex;
+    }
+    if (last < t.length) out.push(document.createTextNode(t.slice(last)));
+    return out;
+  }
   function norm(id, d) {
     d = d || {};
     var r = Number(d.rating);
@@ -665,7 +686,7 @@ a.btn { display: inline-block; text-decoration: none; }
     return state.entries.filter(function (e) {
       if (state.medium !== "all" && e.medium !== state.medium) return false;
       if (state.genre && e.genre.toLowerCase() !== state.genre) return false;
-      if (q && (e.title + " " + e.creator + " " + e.genre + " " + e.review).toLowerCase().indexOf(q) < 0) return false;
+      if (q && (e.title + " " + e.creator + " " + e.genre + " " + plainReview(e.review)).toLowerCase().indexOf(q) < 0) return false;
       return true;
     }).sort(SORTS[state.sort] || byLogged);
   }
@@ -732,12 +753,12 @@ a.btn { display: inline-block; text-decoration: none; }
         e.creator ? h("span", { class: "by", text: e.creator }) : null,
         h("span", { class: "rating" }, stars(e.rating, 14), h("span", { class: "num", text: e.rating > 0 ? e.rating.toFixed(1) : "Unrated" })),
         meta ? h("span", { class: "meta", text: meta }) : null,
-        !open && e.review ? h("span", { class: "excerpt", text: e.review }) : null),
+        !open && e.review ? h("span", { class: "excerpt", text: plainReview(e.review) }) : null),
       h("span", { class: "tog", "aria-hidden": "true", text: open ? "–" : "+" }));
     var body = null;
     if (open) {
       body = h("div", { class: "body" },
-        e.review ? h("p", { class: "review", text: e.review }) : h("p", { class: "review none", text: "No written review yet." }),
+        e.review ? h("p", { class: "review" }, richNodes(e.review)) : h("p", { class: "review none", text: "No written review yet." }),
         h("div", { class: "foot" },
           h("span", { class: "logged", text: (e.medium === "film" ? "Watched " : "Heard ") + (fmtDate(e.loggedOn) || "date unknown") + " · " + (e.medium === "film" ? (e.again ? "Rewatch" : "First watch") : (e.again ? "Relisten" : "First listen")) }),
           state.canWrite ? h("button", { class: "btn ghost small", type: "button", onclick: function () { openEditor(e); } }, "Edit") : null));
@@ -840,6 +861,26 @@ a.btn { display: inline-block; text-decoration: none; }
 
   function showErr(msg) { $("#formErr").textContent = msg || ""; }
 
+  function wrapSel(mark) {
+    var ta = $("#f-review"), a = ta.selectionStart, b = ta.selectionEnd, v = ta.value, sel = v.slice(a, b);
+    if (sel.length >= mark.length * 2 && sel.indexOf(mark) === 0 && sel.slice(-mark.length) === mark) {
+      ta.value = v.slice(0, a) + sel.slice(mark.length, sel.length - mark.length) + v.slice(b);
+      ta.setSelectionRange(a, b - mark.length * 2);
+    } else {
+      ta.value = v.slice(0, a) + mark + sel + mark + v.slice(b);
+      if (a === b) ta.setSelectionRange(a + mark.length, a + mark.length); else ta.setSelectionRange(a + mark.length, b + mark.length);
+    }
+    ta.focus();
+  }
+  Array.prototype.forEach.call(document.querySelectorAll(".fmt"), function (btn) {
+    btn.addEventListener("mousedown", function (ev) { ev.preventDefault(); });
+    btn.addEventListener("click", function () { wrapSel(btn.dataset.fmt); });
+  });
+  $("#f-review").addEventListener("keydown", function (ev) {
+    if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;
+    var k = ev.key.toLowerCase(), m = k === "b" ? "**" : k === "i" ? "*" : k === "u" ? "__" : "";
+    if (m) { ev.preventDefault(); wrapSel(m); }
+  });
   function openEditor(e) {
     state.editing = e ? e.id : null; state.confirmDel = false; showErr("");
     var medium = e ? e.medium : (state.medium === "music" ? "music" : "film");
