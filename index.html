@@ -262,9 +262,11 @@ a.btn { display: inline-block; text-decoration: none; }
     <div class="art-actions">
       <button type="button" class="btn ghost small" id="exportBtn">Export backup</button>
       <button type="button" class="btn ghost small" id="importBtn">Import backup</button>
+      <button type="button" class="btn ghost small" id="lbBtn">Import from Letterboxd</button>
       <button type="button" class="btn ghost small" id="pubSettingsBtn" hidden>Publish settings</button>
     </div>
     <input type="file" id="importFile" accept="application/json,.json" hidden>
+    <input type="file" id="lbFile" accept=".csv,text/csv" multiple hidden>
     <p class="hint" id="backupStatus" role="status"></p>
   </section>
 </div>
@@ -662,6 +664,70 @@ a.btn { display: inline-block; text-decoration: none; }
       store.upsertMany(list);
       backupStatus("Imported " + list.length + (list.length === 1 ? " entry." : " entries."));
     } catch (e) { backupStatus("Couldn't read that file."); }
+  }
+
+  /* ---------- Letterboxd import ---------- */
+  function parseCsv(text) {
+    var rows = [], row = [], f = "", q = false, i = 0, c;
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+    for (; i < text.length; i++) {
+      c = text[i];
+      if (q) {
+        if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c;
+      } else if (c === '"') q = true;
+      else if (c === ",") { row.push(f); f = ""; }
+      else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(f); f = ""; if (row.length > 1 || row[0] !== "") rows.push(row); row = []; }
+      else f += c;
+    }
+    if (f !== "" || row.length) { row.push(f); rows.push(row); }
+    if (!rows.length) return [];
+    var head = rows[0].map(function (x) { return x.trim().toLowerCase(); });
+    return rows.slice(1).map(function (r) { var o = {}; head.forEach(function (k, j) { o[k] = r[j] == null ? "" : r[j]; }); return o; });
+  }
+  function lbText(t) {
+    return t.replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>\s*<p>/gi, "\n\n").replace(/<(b|strong)>/gi, "**").replace(/<\/(b|strong)>/gi, "**")
+      .replace(/<(i|em)>/gi, "*").replace(/<\/(i|em)>/gi, "*").replace(/<[^>]+>/g, "")
+      .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&amp;/g, "&").trim();
+  }
+  function lbId(uri) { var h1 = 5381; for (var i = 0; i < uri.length; i++) h1 = ((h1 * 33) ^ uri.charCodeAt(i)) >>> 0; return "lb" + h1.toString(36) + uri.length.toString(36); }
+  async function importLetterboxd(files) {
+    backupStatus("Reading Letterboxd files...");
+    try {
+      var by = {}, found = 0;
+      for (var i = 0; i < files.length; i++) {
+        var nm = files[i].name.toLowerCase().replace(/\.csv$/, "").replace(/\s*\(\d+\)$/, "");
+        if (["diary", "ratings", "reviews", "watched"].indexOf(nm) < 0) continue;
+        by[nm] = parseCsv(await files[i].text()); found++;
+      }
+      if (!found) { backupStatus("Choose diary.csv, ratings.csv and reviews.csv from your Letterboxd export."); return; }
+      var films = {};
+      function get(r) {
+        var key = (r.name || "").trim().toLowerCase() + "|" + (r.year || "").trim();
+        if (!r.name) return null;
+        return films[key] || (films[key] = { key: key, title: r.name.trim(), year: (r.year || "").trim(), rating: 0, review: "", again: false, logged: "" });
+      }
+      function dt(x) { return /^\d{4}-\d{2}-\d{2}$/.test((x || "").trim()) ? x.trim() : ""; }
+      ["watched", "ratings", "diary", "reviews"].forEach(function (src) {
+        (by[src] || []).forEach(function (r) {
+          var f = get(r); if (!f) return;
+          var rt = parseFloat(r.rating); if (isFinite(rt) && rt > 0) f.rating = rt;
+          var wd = dt(r["watched date"]) || dt(r.date);
+          if (wd && (!f.logged || wd > f.logged)) f.logged = wd;
+          if (/^yes$/i.test((r.rewatch || "").trim())) f.again = true;
+          if (src === "reviews" && r.review && r.review.trim()) f.review = lbText(r.review);
+        });
+      });
+      var have = {}; state.entries.forEach(function (e) { have[e.id] = 1; });
+      var list = [], skipped = 0, t0 = Date.now();
+      Object.keys(films).forEach(function (k, n) {
+        var f = films[k], id = lbId(f.key);
+        if (have[id]) { skipped++; return; }
+        list.push({ id: id, medium: "film", title: f.title, creator: "", kind: "Feature", released: "", genre: "", rating: f.rating,
+          review: f.review, loggedOn: f.logged || today(), again: f.again, createdAt: t0 + n, art: "" });
+      });
+      if (list.length) store.upsertMany(list);
+      backupStatus("Imported " + list.length + (list.length === 1 ? " film" : " films") + (skipped ? " (" + skipped + " already here, left as they were)" : "") + ". Director, genre and release date aren't in Letterboxd's export, so those are blank until you fill them in.");
+    } catch (e) { backupStatus("Couldn't read those files."); }
   }
 
   /* ---------- derive ---------- */
@@ -1169,6 +1235,8 @@ a.btn { display: inline-block; text-decoration: none; }
   /* ---------- boot ---------- */
   $("#exportBtn").addEventListener("click", exportBackup);
   $("#importBtn").addEventListener("click", function () { $("#importFile").click(); });
+  $("#lbBtn").addEventListener("click", function () { $("#lbFile").click(); });
+  $("#lbFile").addEventListener("change", function (ev) { var fs = Array.prototype.slice.call(ev.target.files || []); ev.target.value = ""; if (fs.length) importLetterboxd(fs); });
   $("#importFile").addEventListener("change", function (ev) { var f = ev.target.files && ev.target.files[0]; ev.target.value = ""; if (f) importBackup(f); });
 
   var OWNER = location.hash === "#edit";
