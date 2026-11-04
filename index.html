@@ -678,9 +678,10 @@ a.btn { display: inline-block; text-decoration: none; }
     var box = $("#notes"), out = [];
     if (state.err) out.push(h("div", { class: "note bad" }, h("span", { text: state.err })));
     if (state.slow && !state.loaded) out.push(h("div", { class: "note" }, h("span", { text: "Still reaching your journal. This can take a few seconds." })));
-    if (state.loaded && !state.canWrite) out.push(h("div", { class: "note" }, h("span", { text: "Read-only view. Only the owner can add or edit entries." })));
+    if (state.ownerMode) out.push(h("div", { class: "note" }, h("span", { text: "Editing mode. Visitors see your published entries, not what's saved in this browser. To publish changes, export a backup and update entries.json in your repo." })));
+    if (state.loaded && !state.canWrite && !state.publicView) out.push(h("div", { class: "note" }, h("span", { text: "Read-only view. Only the owner can add or edit entries." })));
     var ex = state.entries.filter(function (e) { return e.example; });
-    if (ex.length) {
+    if (ex.length && !state.publicView) {
       var n = h("div", { class: "note" }, h("span", { text: ex.length + (ex.length === 1 ? " example entry is" : " example entries are") + " showing so you can see the layout. Edit one to keep it, or clear them all." }));
       if (state.canWrite) {
         n.append(h("button", { class: "btn ghost small", type: "button", onclick: clearExamples }, state.confirmClear ? "Tap again to clear" : "Clear examples"));
@@ -723,8 +724,8 @@ a.btn { display: inline-block; text-decoration: none; }
       });
     } else if (!state.entries.length) {
       nodes = [h("li", { class: "empty" },
-        h("h2", { text: "The log is empty." }),
-        h("p", { text: "Add the first film or record you want to remember: a rating, the release date, a genre and whatever you thought." }),
+        h("h2", { text: state.publicView ? "Nothing here yet." : "The log is empty." }),
+        h("p", { text: state.publicView ? "No entries have been published. Check back soon." : "Add the first film or record you want to remember: a rating, the release date, a genre and whatever you thought." }),
         state.canWrite ? h("button", { class: "btn accent", type: "button", onclick: function () { openEditor(null); } }, "Add the first entry") : null)];
     } else {
       var list = visible();
@@ -975,8 +976,35 @@ a.btn { display: inline-block; text-decoration: none; }
   $("#importBtn").addEventListener("click", function () { $("#importFile").click(); });
   $("#importFile").addEventListener("change", function (ev) { var f = ev.target.files && ev.target.files[0]; ev.target.value = ""; if (f) importBackup(f); });
 
+  var OWNER = location.hash === "#edit";
+  window.addEventListener("hashchange", function () { location.reload(); });
+
+  async function bootPublic() {
+    state.canWrite = false; state.publicView = true;
+    $(".backup").hidden = true;
+    var list = [];
+    try {
+      var res = await fetch("entries.json", { cache: "no-cache" });
+      if (res.ok) {
+        var data = await res.json();
+        if (data && data.app === "watched-and-heard" && Array.isArray(data.entries)) {
+          var art = data.art && typeof data.art === "object" ? data.art : {};
+          list = data.entries.filter(function (raw) { return raw && typeof raw === "object"; }).map(function (raw, i) {
+            var e = norm(typeof raw.id === "string" ? raw.id : "p" + i, raw), du = e.art ? art[e.art] : "";
+            if (typeof du === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(du)) artCache.set(e.art, du); else e.art = "";
+            e.example = false;
+            return e;
+          });
+        }
+      }
+    } catch (err) {}
+    setEntries(list);
+  }
+
   render();
   (async function () {
+    if (!OWNER) { await bootPublic(); return; }
+    state.ownerMode = true;
     store = makeLocalStore();
     try {
       (await idbLoadAll()).forEach(function (r) { if (r[1]) artCache.set(r[0], URL.createObjectURL(r[1])); });
