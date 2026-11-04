@@ -834,7 +834,7 @@ a.btn { display: inline-block; text-decoration: none; }
     if (tmdbBusy) return; tmdbBusy = true;
     var prog = $("#tmdbProg"), err = $("#tmdbErr"), go = $("#t-go");
     go.disabled = true; err.textContent = "";
-    var todo = state.entries.filter(function (e) { return e.medium === "film" && (!e.art || !e.creator || !e.genre || !e.released); });
+    var todo = state.entries.filter(function (e) { return e.medium === "film" && (!e.art || !artSrc(e.art) || !e.creator || !e.genre || !e.released); });
     var done = 0, withPoster = 0, notFound = [], recs = [], yrOf = {};
     try {
       for (var i = 0; i < todo.length; i++) {
@@ -853,7 +853,7 @@ a.btn { display: inline-block; text-decoration: none; }
           if (names.length) rec.creator = names.slice(0, 3).join(", ");
         }
         if (hit.tv && rec.kind === "Feature") rec.kind = "Series";
-        if (!rec.art && hit.poster) {
+        if ((!rec.art || !artSrc(rec.art)) && hit.poster) {
           try {
             var img = await fetch("https://image.tmdb.org/t/p/w500" + hit.poster);
             if (!img.ok) throw new Error("img");
