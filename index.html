@@ -156,6 +156,10 @@ button:focus-visible, .row:focus-visible { outline: 2px solid var(--ink); outlin
 .entry:has(.body) .meta { margin-top: 10px; }
 .body { display: flex; flex-direction: column; gap: 24px; padding: 28px 0 0; }
 .review { margin: 0; max-width: 60ch; white-space: pre-wrap; overflow-wrap: anywhere; font: 400 clamp(17px, 1.6vw, 20px)/1.55 var(--sans); letter-spacing: -.005em; }
+.pickgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; margin: 10px 0 0; max-height: 300px; overflow: auto; }
+.pickgrid button { padding: 0; border: 2px solid transparent; background: none; cursor: pointer; line-height: 0; }
+.pickgrid button:hover, .pickgrid button:focus-visible { border-color: currentColor; }
+.pickgrid img { width: 100%; height: auto; display: block; }
 .fmtbar { display: flex; gap: 6px; margin: 0 0 6px; }
 .fmt { min-width: 38px; height: 34px; padding: 0 10px; border: 1px solid var(--line, currentColor); background: transparent; color: inherit; border-radius: 6px; font: 600 15px/1 var(--sans); cursor: pointer; }
 .fmt:hover { background: rgb(128 128 128 / .15); }
@@ -293,8 +297,10 @@ a.btn { display: inline-block; text-decoration: none; }
           <div class="art-actions">
             <button type="button" class="btn small" id="artChoose">Choose image</button>
             <a class="btn ghost small" id="artFind" href="https://www.google.com/imghp" target="_blank" rel="noopener noreferrer">Find art</a>
+            <button type="button" class="btn ghost small" id="artPick" hidden>Pick from TMDB</button>
             <button type="button" class="btn ghost small" id="artRemove" hidden>Remove</button>
           </div>
+          <div class="pickgrid" id="pickGrid" hidden></div>
           <p class="hint">Find art opens an image search in a new tab. Save the one you like, then choose it here. On a computer you can also paste or drop an image.</p>
           <p class="hint" id="artStatus" role="status"></p>
         </div>
@@ -1158,6 +1164,7 @@ a.btn { display: inline-block; text-decoration: none; }
     var t = tileNode({ medium: currentMedium(), title: $("#f-title").value.trim() || "Title", creator: $("#f-creator").value.trim(), kind: $("#f-kind").value, art: formArt });
     $("#artPreview").replaceChildren(t);
     $("#artRemove").hidden = !formArt;
+    $("#artPick").hidden = currentMedium() !== "film";
     $("#artChoose").textContent = formArt ? "Replace image" : "Choose image";
   }
   function loadImage(file) {
@@ -1180,6 +1187,35 @@ a.btn { display: inline-block; text-decoration: none; }
       cv.toBlob(function (b) { b ? resolve(b) : reject(new Error("encode")); }, "image/jpeg", 0.86);
     });
   }
+  $("#artPick").addEventListener("click", async function () {
+    var grid = $("#pickGrid"), tok = "";
+    try { tok = localStorage.getItem(TMDB_KEY) || ""; } catch (e) {}
+    if (!tok) { artStatus("Add your TMDB token first: close this and use Fetch posters and film details at the bottom of the page."); return; }
+    var title = $("#f-title").value.trim();
+    if (!title) { artStatus("Enter a title first."); return; }
+    artStatus("Looking up posters..."); grid.hidden = true; grid.replaceChildren();
+    try {
+      var y = parseInt(($("#f-released").value || "").slice(0, 4), 10) || 0;
+      var hit = await tmdbFind(tok, title, y);
+      if (!hit) { artStatus("Couldn't find that title on TMDB."); return; }
+      var im = await tmdbGet(tok, "/" + (hit.tv ? "tv" : "movie") + "/" + hit.id + "/images", { include_image_language: "en,null" });
+      var ps = (im.posters || []).slice(0, 40);
+      if (!ps.length) { artStatus("No posters found."); return; }
+      ps.forEach(function (p) {
+        var img = h("img", { alt: "Poster option", loading: "lazy", src: "https://image.tmdb.org/t/p/w185" + p.file_path });
+        grid.appendChild(h("button", { type: "button", "aria-label": "Use this poster", onclick: async function () {
+          artStatus("Saving poster...");
+          try {
+            var r = await fetch("https://image.tmdb.org/t/p/w500" + p.file_path);
+            if (!r.ok) throw new Error("img");
+            await useFile(await r.blob());
+            grid.hidden = true;
+          } catch (e) { artStatus("Couldn't download that poster."); }
+        } }, img));
+      });
+      grid.hidden = false; artStatus("Tap a poster to use it.");
+    } catch (e) { artStatus(e && e.auth ? "TMDB rejected the saved token." : "Couldn't reach TMDB."); }
+  });
   async function useFile(file) {
     if (!assets || uploading) return;
     uploading = true; artStatus("Preparing image..."); showErr("");
