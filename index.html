@@ -218,6 +218,7 @@ a.btn { display: inline-block; text-decoration: none; }
   <p class="logo">luciano's log</p>
   <div class="bar-r">
     <span class="tally" id="tally">Opening the log</span>
+    <button type="button" class="btn ghost small" id="publishBtn" hidden>Publish</button>
     <button type="button" class="btn new" id="fab" hidden>+ New entry</button>
   </div>
 </header>
@@ -258,6 +259,7 @@ a.btn { display: inline-block; text-decoration: none; }
     <div class="art-actions">
       <button type="button" class="btn ghost small" id="exportBtn">Export backup</button>
       <button type="button" class="btn ghost small" id="importBtn">Import backup</button>
+      <button type="button" class="btn ghost small" id="pubSettingsBtn" hidden>Publish settings</button>
     </div>
     <input type="file" id="importFile" accept="application/json,.json" hidden>
     <p class="hint" id="backupStatus" role="status"></p>
@@ -339,6 +341,11 @@ a.btn { display: inline-block; text-decoration: none; }
     </div>
 
     <div class="f">
+      <label for="f-again" id="f-again-label">First watch or rewatch</label>
+      <select class="in" id="f-again"><option value="first">First watch</option><option value="again">Rewatch</option></select>
+    </div>
+
+    <div class="f">
       <label for="f-logged" id="f-logged-label">Watched on</label>
       <input class="in" id="f-logged" type="date">
     </div>
@@ -349,6 +356,32 @@ a.btn { display: inline-block; text-decoration: none; }
       <button type="submit" class="btn accent" id="f-save">Save entry</button>
       <button type="button" class="btn ghost" id="f-cancel">Cancel</button>
       <button type="button" class="btn danger push" id="f-delete" hidden>Delete</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="pubDlg" aria-labelledby="pubTitle">
+  <form class="sheet" id="pubForm" novalidate>
+    <h2 id="pubTitle">publish</h2>
+    <p class="hint">Publishing saves your entries and covers to your GitHub repo. Visitors see them after GitHub rebuilds the site, usually 1 to 2 minutes.</p>
+    <div class="f">
+      <label for="p-repo">Repository</label>
+      <input class="in" id="p-repo" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="yourname/reponame">
+    </div>
+    <div class="f">
+      <label for="p-branch">Branch</label>
+      <input class="in" id="p-branch" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="main">
+    </div>
+    <div class="f">
+      <label for="p-token">GitHub token</label>
+      <input class="in" id="p-token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <p class="hint">Use a fine-grained token limited to this repository, with Contents set to Read and write. It is saved in this browser only and sent only to GitHub.</p>
+    </div>
+    <p class="err" id="pubErr" role="alert"></p>
+    <div class="actions">
+      <button type="submit" class="btn accent" id="p-save">Save settings</button>
+      <button type="button" class="btn ghost" id="p-cancel">Close</button>
+      <button type="button" class="btn danger push" id="p-forget">Forget token</button>
     </div>
   </form>
 </dialog>
@@ -407,7 +440,7 @@ a.btn { display: inline-block; text-decoration: none; }
     return {
       id: id, medium: d.medium === "film" ? "film" : "music", title: str(d.title), creator: str(d.creator),
       kind: str(d.kind), released: str(d.released), genre: str(d.genre), rating: r, review: str(d.review),
-      loggedOn: str(d.loggedOn), createdAt: Number(d.createdAt) || 0, example: d.example === true,
+      loggedOn: str(d.loggedOn), again: d.again === true, createdAt: Number(d.createdAt) || 0, example: d.example === true,
       art: /^[0-9a-f]{32}$/.test(str(d.art)) ? str(d.art) : ""
     };
   }
@@ -601,7 +634,7 @@ a.btn { display: inline-block; text-decoration: none; }
           } else if (!artSrc(e.art)) { e.art = ""; }
         }
         var rec = { id: id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, createdAt: e.createdAt, art: e.art };
+          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, createdAt: e.createdAt, art: e.art };
         if (e.example) rec.example = true;
         list.push(rec);
       }
@@ -673,7 +706,8 @@ a.btn { display: inline-block; text-decoration: none; }
     var box = $("#notes"), out = [];
     if (state.err) out.push(h("div", { class: "note bad" }, h("span", { text: state.err })));
     if (state.slow && !state.loaded) out.push(h("div", { class: "note" }, h("span", { text: "Still reaching your journal. This can take a few seconds." })));
-    if (state.ownerMode) out.push(h("div", { class: "note" }, h("span", { text: "Editing mode. Visitors see your published entries, not what's saved in this browser. To publish changes, export a backup and update entries.json in your repo." })));
+    if (state.ownerMode) out.push(h("div", { class: "note" }, h("span", { text: "Editing mode. Visitors see what you last published. Tap Publish to update the public site." })));
+    if (state.pub) out.push(h("div", { class: "note" + (state.pub.bad ? " bad" : "") }, h("span", { text: state.pub.msg })));
     if (state.loaded && !state.canWrite && !state.publicView) out.push(h("div", { class: "note" }, h("span", { text: "Read-only view. Only the owner can add or edit entries." })));
     var ex = state.entries.filter(function (e) { return e.example; });
     if (ex.length && !state.publicView) {
@@ -705,7 +739,7 @@ a.btn { display: inline-block; text-decoration: none; }
       body = h("div", { class: "body" },
         e.review ? h("p", { class: "review", text: e.review }) : h("p", { class: "review none", text: "No written review yet." }),
         h("div", { class: "foot" },
-          h("span", { class: "logged", text: (e.medium === "film" ? "Watched " : "Heard ") + (fmtDate(e.loggedOn) || "date unknown") }),
+          h("span", { class: "logged", text: (e.medium === "film" ? "Watched " : "Heard ") + (fmtDate(e.loggedOn) || "date unknown") + " · " + (e.medium === "film" ? (e.again ? "Rewatch" : "First watch") : (e.again ? "Relisten" : "First listen")) }),
           state.canWrite ? h("button", { class: "btn ghost small", type: "button", onclick: function () { openEditor(e); } }, "Edit") : null));
     }
     return h("li", { class: "entry" }, row, body);
@@ -784,6 +818,11 @@ a.btn { display: inline-block; text-decoration: none; }
   function setMediumUI(medium, kind) {
     $("#f-creator-label").textContent = medium === "film" ? "Director" : "Artist";
     $("#f-logged-label").textContent = medium === "film" ? "Watched on" : "Heard on";
+    var ag = $("#f-again"), agv = ag.value;
+    $("#f-again-label").textContent = medium === "film" ? "First watch or rewatch" : "First listen or relisten";
+    ag.options[0].textContent = medium === "film" ? "First watch" : "First listen";
+    ag.options[1].textContent = medium === "film" ? "Rewatch" : "Relisten";
+    ag.value = agv;
     var sel = $("#f-kind");
     sel.replaceChildren.apply(sel, KINDS[medium].map(function (k) { return h("option", { value: k, text: k }); }));
     sel.value = KINDS[medium].indexOf(kind) >= 0 ? kind : KINDS[medium][0];
@@ -814,6 +853,7 @@ a.btn { display: inline-block; text-decoration: none; }
     rIn.value = String(e ? e.rating : 0); syncRating();
     $("#f-review").value = e ? e.review : "";
     $("#f-logged").value = e ? (e.loggedOn || today()) : today();
+    $("#f-again").value = e && e.again ? "again" : "first";
     state.saved = false; formArt = e ? e.art : ""; origArt = formArt; uploadedNow = []; uploading = false;
     $("#artField").hidden = !assets; artStatus("");
     if (assets) renderArtPreview();
@@ -852,7 +892,7 @@ a.btn { display: inline-block; text-decoration: none; }
       medium: medium, title: title, creator: $("#f-creator").value.trim(), kind: $("#f-kind").value,
       released: $("#f-released").value, genre: $("#f-genre").value.trim(),
       rating: Number(rIn.value) || 0, review: $("#f-review").value.trim(),
-      loggedOn: $("#f-logged").value || today(), createdAt: old && old.createdAt ? old.createdAt : Date.now(),
+      loggedOn: $("#f-logged").value || today(), again: $("#f-again").value === "again", createdAt: old && old.createdAt ? old.createdAt : Date.now(),
       art: assets ? formArt : (old ? old.art : "")
     };
     if (uploading) { showErr("Wait for the image to finish uploading."); return; }
@@ -966,6 +1006,125 @@ a.btn { display: inline-block; text-decoration: none; }
   $("#sort").addEventListener("change", function (ev) { state.sort = ev.target.value; renderList(); });
   $("#fab").addEventListener("click", function () { openEditor(null); });
 
+  /* ---------- publish to GitHub ---------- */
+  var PUB_KEY = "watched-heard-publish-v1";
+  function loadPub() { try { var r = JSON.parse(localStorage.getItem(PUB_KEY) || "null"); if (r && typeof r === "object") return r; } catch (e) {} return null; }
+  function savePub(o) { try { localStorage.setItem(PUB_KEY, JSON.stringify(o)); return true; } catch (e) { return false; } }
+  function guessRepo() {
+    var m = /^([a-z0-9-]+)\.github\.io$/i.exec(location.hostname);
+    if (!m) return "";
+    var seg = location.pathname.split("/").filter(Boolean)[0];
+    return m[1] + "/" + (seg && !/\.html?$/i.test(seg) ? seg : m[1] + ".github.io");
+  }
+  function pubMsg(msg, bad) { state.pub = msg ? { msg: msg, bad: !!bad } : null; renderNotes(); }
+  async function gh(cfg, method, path, body) {
+    var headers = { "Accept": "application/vnd.github+json", "Authorization": "Bearer " + cfg.token, "X-GitHub-Api-Version": "2022-11-28" };
+    if (body) headers["Content-Type"] = "application/json";
+    var res = await fetch("https://api.github.com/repos/" + cfg.repo + path, { method: method, headers: headers, body: body ? JSON.stringify(body) : undefined });
+    var data = null;
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok) { var err = new Error((data && data.message) || ("HTTP " + res.status)); err.status = res.status; throw err; }
+    return data;
+  }
+  function ghError(err) {
+    if (err && err.status === 401) return "GitHub rejected the token. Check that it hasn't expired, then update it in Publish settings.";
+    if (err && err.status === 403) return "GitHub refused this. The token needs Contents set to Read and write on this repository.";
+    if (err && err.status === 404) return "Couldn't find that repository or branch, or the token can't reach it. Check Publish settings.";
+    if (err && (err.status === 409 || err.status === 422)) return "The repository changed while publishing. Try again.";
+    if (err instanceof TypeError) return "Couldn't reach GitHub. Check your connection and try again.";
+    return "Couldn't publish (" + ((err && err.message) || "error") + ").";
+  }
+  async function publishEntries(cfg) {
+    var branch = (cfg.branch || "main").trim() || "main";
+    var ref = "heads/" + branch.split("/").map(encodeURIComponent).join("/");
+    pubMsg("Publishing...");
+    var head = await gh(cfg, "GET", "/git/ref/" + ref);
+    var commit = await gh(cfg, "GET", "/git/commits/" + head.object.sha);
+    var tree = await gh(cfg, "GET", "/git/trees/" + commit.tree.sha + "?recursive=1");
+    var existing = {};
+    tree.tree.forEach(function (t) { if (t.type === "blob") existing[t.path] = t.sha; });
+    var items = [], wanted = {}, ents = [], uploaded = 0;
+    for (var i = 0; i < state.entries.length; i++) {
+      var e = state.entries[i], art = e.art, path = "art/" + art + ".jpg", has = !!(art && existing[path]);
+      if (art && !has) {
+        var blob = null;
+        try { blob = await idbRun("readonly", function (s) { return s.get(art); }); } catch (x) {}
+        if (blob) {
+          if (blob.type !== "image/jpeg") blob = await toJpeg(blob);
+          uploaded++; pubMsg("Uploading cover " + uploaded + "...");
+          var up = await gh(cfg, "POST", "/git/blobs", { content: (await blobToDataUrl(blob)).split(",")[1], encoding: "base64" });
+          items.push({ path: path, mode: "100644", type: "blob", sha: up.sha });
+          has = true;
+        }
+      }
+      if (art && has) wanted[path] = 1; else art = "";
+      ents.push({ id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released,
+        genre: e.genre, rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, createdAt: e.createdAt, art: art });
+    }
+    Object.keys(existing).forEach(function (p) {
+      if (/^art\/[0-9a-f]{32}\.jpg$/.test(p) && !wanted[p]) items.push({ path: p, mode: "100644", type: "blob", sha: null });
+    });
+    pubMsg("Saving entries...");
+    var json = JSON.stringify({ app: "watched-and-heard", version: 2, publishedAt: new Date().toISOString(), entries: ents });
+    var jb = await gh(cfg, "POST", "/git/blobs", { content: json, encoding: "utf-8" });
+    items.push({ path: "entries.json", mode: "100644", type: "blob", sha: jb.sha });
+    var nt = await gh(cfg, "POST", "/git/trees", { base_tree: commit.tree.sha, tree: items });
+    var nc = await gh(cfg, "POST", "/git/commits", { message: "Update entries", tree: nt.sha, parents: [head.object.sha] });
+    await gh(cfg, "PATCH", "/git/refs/" + ref, { sha: nc.sha });
+    pubMsg("Published " + ents.length + (ents.length === 1 ? " entry" : " entries") + ". Your site updates in about 1 to 2 minutes.");
+  }
+
+  var publishing = false, pubConfirm = false, pubTimer = null;
+  function resetPubConfirm(keepMsg) {
+    pubConfirm = false; $("#publishBtn").textContent = "Publish";
+    if (!keepMsg) pubMsg("");
+  }
+  async function onPublishClick() {
+    if (publishing) return;
+    var cfg = loadPub();
+    if (!cfg || !cfg.token || !cfg.repo) { openPubDialog("Add your repository and token first."); return; }
+    if (!state.entries.length) { pubMsg("There is nothing to publish yet. Add entries or import a backup first.", true); return; }
+    if (!pubConfirm) {
+      pubConfirm = true; $("#publishBtn").textContent = "Tap again to publish";
+      pubMsg("Publishing " + state.entries.length + (state.entries.length === 1 ? " entry" : " entries") + " replaces what visitors see now. Tap Publish again to confirm.");
+      clearTimeout(pubTimer); pubTimer = setTimeout(function () { resetPubConfirm(false); }, 6000);
+      return;
+    }
+    clearTimeout(pubTimer); resetPubConfirm(true);
+    publishing = true; $("#publishBtn").disabled = true;
+    try { await publishEntries(cfg); } catch (err) { pubMsg(ghError(err), true); }
+    publishing = false; $("#publishBtn").disabled = false;
+  }
+
+  var pubDlg = $("#pubDlg");
+  function openPubDialog(msg) {
+    var cfg = loadPub() || {};
+    $("#p-repo").value = cfg.repo || guessRepo();
+    $("#p-branch").value = cfg.branch || "main";
+    $("#p-token").value = cfg.token || "";
+    $("#pubErr").textContent = msg || "";
+    if (typeof pubDlg.showModal === "function") pubDlg.showModal(); else pubDlg.setAttribute("open", "");
+  }
+  function closePubDialog() { if (typeof pubDlg.close === "function") pubDlg.close(); else pubDlg.removeAttribute("open"); }
+  $("#pubForm").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var repo = $("#p-repo").value.trim().replace(/^https?:\/\/github\.com\//i, "").replace(/\.git$/i, "").replace(/\/+$/, "");
+    var branch = $("#p-branch").value.trim() || "main", token = $("#p-token").value.trim();
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) { $("#pubErr").textContent = "Enter the repository as yourname/reponame."; return; }
+    if (!token) { $("#pubErr").textContent = "Paste your GitHub token."; return; }
+    if (!savePub({ repo: repo, branch: branch, token: token })) { $("#pubErr").textContent = "This browser couldn't save the settings."; return; }
+    closePubDialog();
+    pubMsg("Publish settings saved. Tap Publish when you're ready.");
+  });
+  $("#p-cancel").addEventListener("click", closePubDialog);
+  pubDlg.addEventListener("click", function (ev) { if (ev.target === pubDlg) closePubDialog(); });
+  $("#p-forget").addEventListener("click", function () {
+    try { localStorage.removeItem(PUB_KEY); } catch (e) {}
+    $("#p-token").value = ""; $("#pubErr").textContent = "Token removed from this browser.";
+  });
+  $("#publishBtn").addEventListener("click", onPublishClick);
+  $("#pubSettingsBtn").addEventListener("click", function () { openPubDialog(""); });
+
   /* ---------- boot ---------- */
   $("#exportBtn").addEventListener("click", exportBackup);
   $("#importBtn").addEventListener("click", function () { $("#importFile").click(); });
@@ -986,7 +1145,7 @@ a.btn { display: inline-block; text-decoration: none; }
           var art = data.art && typeof data.art === "object" ? data.art : {};
           list = data.entries.filter(function (raw) { return raw && typeof raw === "object"; }).map(function (raw, i) {
             var e = norm(typeof raw.id === "string" ? raw.id : "p" + i, raw), du = e.art ? art[e.art] : "";
-            if (typeof du === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(du)) artCache.set(e.art, du); else e.art = "";
+            if (e.art) artCache.set(e.art, typeof du === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(du) ? du : "art/" + e.art + ".jpg");
             e.example = false;
             return e;
           });
@@ -1000,6 +1159,7 @@ a.btn { display: inline-block; text-decoration: none; }
   (async function () {
     if (!OWNER) { await bootPublic(); return; }
     state.ownerMode = true;
+    $("#publishBtn").hidden = false; $("#pubSettingsBtn").hidden = false;
     store = makeLocalStore();
     try {
       (await idbLoadAll()).forEach(function (r) { if (r[1]) artCache.set(r[0], URL.createObjectURL(r[1])); });
