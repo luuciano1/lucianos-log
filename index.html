@@ -490,7 +490,8 @@ a.btn { display: inline-block; text-decoration: none; }
       id: id, medium: d.medium === "film" ? "film" : "music", title: str(d.title), creator: str(d.creator),
       kind: str(d.kind), released: str(d.released), genre: str(d.genre), rating: r, review: str(d.review),
       loggedOn: str(d.loggedOn), again: d.again === true, year: /^\d{4}$/.test(str(d.year)) ? str(d.year) : "", createdAt: Number(d.createdAt) || 0, example: d.example === true,
-      art: /^[0-9a-f]{32}$/.test(str(d.art)) ? str(d.art) : ""
+      art: /^[0-9a-f]{32}$/.test(str(d.art)) ? str(d.art) : "",
+      cover: /^https:\/\/cdn2\.albumoftheyear\.org\/[A-Za-z0-9_\/.-]+$/.test(str(d.cover)) ? str(d.cover) : ""
     };
   }
 
@@ -520,7 +521,7 @@ a.btn { display: inline-block; text-decoration: none; }
     return out.toUpperCase();
   }
   function tileNode(e) {
-    var src = e.art ? artSrc(e.art) : "";
+    var src = (e.art ? artSrc(e.art) : "") || e.cover || "";
     var t = h("span", { class: "tile " + e.medium + (src ? " has-art" : ""), "aria-hidden": "true", vars: { "--h": tileHue(e) } },
       h("span", { class: "ini", text: initials(e.title) }),
       h("span", { class: "tag", text: KIND_TAG[e.kind] || (e.medium === "film" ? "FILM" : "LP") }));
@@ -712,7 +713,7 @@ a.btn { display: inline-block; text-decoration: none; }
           } else if (!artSrc(e.art)) { e.art = ""; }
         }
         var rec = { id: id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: e.art };
+          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: e.art, cover: e.cover };
         if (e.example) rec.example = true;
         list.push(rec);
       }
@@ -839,7 +840,7 @@ a.btn { display: inline-block; text-decoration: none; }
         if (!hit) { notFound.push(e.title); continue; }
         var d = await tmdbGet(tok, "/" + (hit.tv ? "tv" : "movie") + "/" + hit.id, { append_to_response: hit.tv ? "" : "credits" });
         var rec = { id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: e.art };
+          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: e.art, cover: e.cover };
         if (!rec.released) { var rd = hit.tv ? d.first_air_date : d.release_date; if (/^\d{4}-\d{2}-\d{2}$/.test(rd || "")) rec.released = rd; }
         if (!rec.genre && d.genres && d.genres.length) rec.genre = d.genres[0].name;
         if (!rec.creator) {
@@ -1159,7 +1160,8 @@ a.btn { display: inline-block; text-decoration: none; }
       released: $("#f-released").value, genre: $("#f-genre").value.trim(),
       rating: Number(rIn.value) || 0, review: $("#f-review").value.trim(),
       loggedOn: $("#f-logged").value || today(), again: $("#f-again").value === "again", year: old ? old.year : "", createdAt: old && old.createdAt ? old.createdAt : Date.now(),
-      art: assets ? formArt : (old ? old.art : "")
+      art: assets ? formArt : (old ? old.art : ""),
+      cover: old ? old.cover : ""
     };
     if (uploading) { showErr("Wait for the image to finish uploading."); return; }
     var btn = $("#f-save"); btn.disabled = true; showErr("");
@@ -1356,7 +1358,7 @@ a.btn { display: inline-block; text-decoration: none; }
       if (art && LB_ART[art] && !has) { /* shown from Letterboxd, no file needed */ }
       else if (art && has) wanted[path] = 1; else art = "";
       ents.push({ id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released,
-        genre: e.genre, rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: art });
+        genre: e.genre, rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: art, cover: e.cover });
     }
     Object.keys(existing).forEach(function (p) {
       if (/^art\/[0-9a-f]{32}\.jpg$/.test(p) && !wanted[p]) items.push({ path: p, mode: "100644", type: "blob", sha: null });
