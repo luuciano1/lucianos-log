@@ -263,6 +263,7 @@ a.btn { display: inline-block; text-decoration: none; }
       <button type="button" class="btn ghost small" id="exportBtn">Export backup</button>
       <button type="button" class="btn ghost small" id="importBtn">Import backup</button>
       <button type="button" class="btn ghost small" id="lbBtn">Import from Letterboxd</button>
+      <button type="button" class="btn ghost small" id="tmdbBtn">Fetch posters and film details</button>
       <button type="button" class="btn ghost small" id="pubSettingsBtn" hidden>Publish settings</button>
     </div>
     <input type="file" id="importFile" accept="application/json,.json" hidden>
@@ -370,6 +371,24 @@ a.btn { display: inline-block; text-decoration: none; }
   </form>
 </dialog>
 
+<dialog id="tmdbDlg" aria-labelledby="tmdbTitle">
+  <form class="sheet" id="tmdbForm" novalidate>
+    <h2 id="tmdbTitle">posters and film details</h2>
+    <p class="hint">This looks up each film without a poster on The Movie Database, then fills in the poster, director, genre and release date. It never overwrites anything you've already filled in.</p>
+    <div class="f">
+      <label for="t-key">TMDB API Read Access Token</label>
+      <input class="in" id="t-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <p class="hint">Free from themoviedb.org: Settings, then API, then request a developer key. Paste the long "API Read Access Token". It's saved in this browser only and sent only to TMDB.</p>
+    </div>
+    <p class="err" id="tmdbErr" role="alert"></p>
+    <p class="hint" id="tmdbProg" role="status"></p>
+    <div class="actions">
+      <button type="submit" class="btn accent" id="t-go">Start</button>
+      <button type="button" class="btn ghost" id="t-close">Close</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="pubDlg" aria-labelledby="pubTitle">
   <form class="sheet" id="pubForm" novalidate>
     <h2 id="pubTitle">publish</h2>
@@ -463,7 +482,7 @@ a.btn { display: inline-block; text-decoration: none; }
     return {
       id: id, medium: d.medium === "film" ? "film" : "music", title: str(d.title), creator: str(d.creator),
       kind: str(d.kind), released: str(d.released), genre: str(d.genre), rating: r, review: str(d.review),
-      loggedOn: str(d.loggedOn), again: d.again === true, createdAt: Number(d.createdAt) || 0, example: d.example === true,
+      loggedOn: str(d.loggedOn), again: d.again === true, year: /^\d{4}$/.test(str(d.year)) ? str(d.year) : "", createdAt: Number(d.createdAt) || 0, example: d.example === true,
       art: /^[0-9a-f]{32}$/.test(str(d.art)) ? str(d.art) : ""
     };
   }
@@ -657,7 +676,7 @@ a.btn { display: inline-block; text-decoration: none; }
           } else if (!artSrc(e.art)) { e.art = ""; }
         }
         var rec = { id: id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, createdAt: e.createdAt, art: e.art };
+          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: e.art };
         if (e.example) rec.example = true;
         list.push(rec);
       }
@@ -718,17 +737,121 @@ a.btn { display: inline-block; text-decoration: none; }
         });
       });
       var have = {}; state.entries.forEach(function (e) { have[e.id] = 1; });
-      var list = [], skipped = 0, t0 = Date.now();
+      var list = [], skipped = 0, t0 = Date.now(), cur = {};
+      state.entries.forEach(function (e) { cur[e.id] = e; });
       Object.keys(films).forEach(function (k, n) {
         var f = films[k], id = lbId(f.key);
-        if (have[id]) { skipped++; return; }
+        if (have[id]) {
+          var o = cur[id], ch = false, rec = { id: o.id, medium: o.medium, title: o.title, creator: o.creator, kind: o.kind, released: o.released, genre: o.genre,
+            rating: o.rating, review: o.review, loggedOn: o.loggedOn, again: o.again, year: o.year || f.year, createdAt: o.createdAt, art: o.art };
+          if (!rec.rating && f.rating) { rec.rating = f.rating; ch = true; }
+          if (!rec.review && f.review) { rec.review = f.review; ch = true; }
+          if (!rec.again && f.again) { rec.again = true; ch = true; }
+          if (!o.year && f.year) ch = true;
+          if (ch) list.push(rec); else skipped++;
+          return;
+        }
         list.push({ id: id, medium: "film", title: f.title, creator: "", kind: "Feature", released: "", genre: "", rating: f.rating,
-          review: f.review, loggedOn: f.logged || today(), again: f.again, createdAt: t0 + n, art: "" });
+          review: f.review, loggedOn: f.logged || today(), again: f.again, year: f.year, createdAt: t0 + n, art: "" });
       });
       if (list.length) store.upsertMany(list);
       backupStatus("Imported " + list.length + (list.length === 1 ? " film" : " films") + (skipped ? " (" + skipped + " already here, left as they were)" : "") + ". Director, genre and release date aren't in Letterboxd's export, so those are blank until you fill them in.");
     } catch (e) { backupStatus("Couldn't read those files."); }
   }
+
+  /* ---------- TMDB posters and details ---------- */
+  var TMDB_KEY = "watched-heard-tmdb-v1";
+  function tmdbGet(tok, path, params) {
+    var u = new URL("https://api.themoviedb.org/3" + path), headers = { "Accept": "application/json" };
+    Object.keys(params || {}).forEach(function (k) { u.searchParams.set(k, params[k]); });
+    if (tok.length > 60) headers["Authorization"] = "Bearer " + tok; else u.searchParams.set("api_key", tok);
+    return fetch(u.toString(), { headers: headers }).then(function (r) {
+      if (r.status === 401) { var er = new Error("auth"); er.auth = true; throw er; }
+      if (!r.ok) throw new Error("http " + r.status);
+      return r.json();
+    });
+  }
+  function yr(d) { return parseInt((d || "").slice(0, 4), 10) || 0; }
+  async function tmdbFind(tok, title, year) {
+    var best = null;
+    for (var pass = 0; pass < 2 && !best; pass++) {
+      for (var kind = 0; kind < 2 && !best; kind++) {
+        var tv = kind === 1, params = { query: title, include_adult: "false" };
+        if (pass === 0 && year) params[tv ? "first_air_date_year" : "year"] = String(year);
+        var res = (await tmdbGet(tok, tv ? "/search/tv" : "/search/movie", params)).results || [];
+        res = res.filter(function (r) { return r.poster_path; });
+        if (!res.length) continue;
+        var pick = res.find(function (r) { var y = yr(tv ? r.first_air_date : r.release_date); return !year || Math.abs(y - year) <= 1; });
+        if (!pick && pass === 1) pick = res[0];
+        if (pick) best = { id: pick.id, tv: tv, poster: pick.poster_path };
+      }
+    }
+    return best;
+  }
+  var tmdbBusy = false;
+  async function runTmdb(tok) {
+    if (tmdbBusy) return; tmdbBusy = true;
+    var prog = $("#tmdbProg"), err = $("#tmdbErr"), go = $("#t-go");
+    go.disabled = true; err.textContent = "";
+    var todo = state.entries.filter(function (e) { return e.medium === "film" && (!e.art || !e.creator || !e.genre || !e.released); });
+    var done = 0, withPoster = 0, notFound = [], recs = [], yrOf = {};
+    try {
+      for (var i = 0; i < todo.length; i++) {
+        var e = todo[i];
+        prog.textContent = "Working on " + (i + 1) + " of " + todo.length + ": " + e.title;
+        var hit = await tmdbFind(tok, e.title, parseInt(e.year, 10) || 0);
+        if (!hit) { notFound.push(e.title); continue; }
+        var d = await tmdbGet(tok, "/" + (hit.tv ? "tv" : "movie") + "/" + hit.id, { append_to_response: hit.tv ? "" : "credits" });
+        var rec = { id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
+          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: e.art };
+        if (!rec.released) { var rd = hit.tv ? d.first_air_date : d.release_date; if (/^\d{4}-\d{2}-\d{2}$/.test(rd || "")) rec.released = rd; }
+        if (!rec.genre && d.genres && d.genres.length) rec.genre = d.genres[0].name;
+        if (!rec.creator) {
+          var names = hit.tv ? (d.created_by || []).map(function (c) { return c.name; })
+            : ((d.credits && d.credits.crew) || []).filter(function (c) { return c.job === "Director"; }).map(function (c) { return c.name; });
+          if (names.length) rec.creator = names.slice(0, 3).join(", ");
+        }
+        if (hit.tv && rec.kind === "Feature") rec.kind = "Series";
+        if (!rec.art && hit.poster) {
+          try {
+            var img = await fetch("https://image.tmdb.org/t/p/w500" + hit.poster);
+            if (!img.ok) throw new Error("img");
+            var jpg = await toJpeg(await img.blob());
+            var up = await localAssets.upload(jpg);
+            rec.art = up.id; withPoster++;
+          } catch (x) { /* keep going without this poster */ }
+        }
+        recs.push(rec);
+        if (recs.length >= 10) { store.upsertMany(recs.splice(0)); }
+        done++;
+        await new Promise(function (r) { setTimeout(r, 120); });
+      }
+      if (recs.length) store.upsertMany(recs.splice(0));
+      prog.textContent = "Finished. Filled in " + done + " of " + todo.length + " films, with " + withPoster + " new posters." +
+        (notFound.length ? " Couldn't find: " + notFound.slice(0, 12).join(", ") + (notFound.length > 12 ? " and " + (notFound.length - 12) + " more." : ".") : "");
+    } catch (x) {
+      if (recs.length) store.upsertMany(recs.splice(0));
+      err.textContent = x && x.auth ? "TMDB rejected that token. Copy the API Read Access Token again." :
+        x instanceof TypeError ? "Couldn't reach TMDB. Check your connection and try again." : "Stopped early (" + ((x && x.message) || "error") + "). Run it again to continue where it left off.";
+    }
+    go.disabled = false; tmdbBusy = false;
+  }
+  var tmdbDlg = $("#tmdbDlg");
+  $("#tmdbBtn").addEventListener("click", function () {
+    var k = ""; try { k = localStorage.getItem(TMDB_KEY) || ""; } catch (e) {}
+    $("#t-key").value = k; $("#tmdbErr").textContent = ""; $("#tmdbProg").textContent = "";
+    if (typeof tmdbDlg.showModal === "function") tmdbDlg.showModal(); else tmdbDlg.setAttribute("open", "");
+  });
+  function closeTmdb() { if (typeof tmdbDlg.close === "function") tmdbDlg.close(); else tmdbDlg.removeAttribute("open"); }
+  $("#t-close").addEventListener("click", closeTmdb);
+  tmdbDlg.addEventListener("click", function (ev) { if (ev.target === tmdbDlg && !tmdbBusy) closeTmdb(); });
+  $("#tmdbForm").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var tok = $("#t-key").value.trim();
+    if (!tok) { $("#tmdbErr").textContent = "Paste your TMDB token first."; return; }
+    try { localStorage.setItem(TMDB_KEY, tok); } catch (e) {}
+    runTmdb(tok);
+  });
 
   /* ---------- derive ---------- */
   function byLogged(a, b) { return (b.loggedOn || "").localeCompare(a.loggedOn || "") || b.createdAt - a.createdAt; }
@@ -810,7 +933,7 @@ a.btn { display: inline-block; text-decoration: none; }
   function entryNode(e) {
     var open = state.open.has(e.id);
     var tile = tileNode(e);
-    var meta = [e.released ? fmtDate(e.released) : "", e.genre, e.kind].filter(Boolean).join(" · ");
+    var meta = [e.released ? fmtDate(e.released) : (e.year || ""), e.genre, e.kind].filter(Boolean).join(" · ");
     var row = h("button", { class: "row", type: "button", "aria-expanded": String(open),
       onclick: function () { if (state.open.has(e.id)) state.open.delete(e.id); else state.open.add(e.id); renderList(); } },
       tile,
@@ -999,7 +1122,7 @@ a.btn { display: inline-block; text-decoration: none; }
       medium: medium, title: title, creator: $("#f-creator").value.trim(), kind: $("#f-kind").value,
       released: $("#f-released").value, genre: $("#f-genre").value.trim(),
       rating: Number(rIn.value) || 0, review: $("#f-review").value.trim(),
-      loggedOn: $("#f-logged").value || today(), again: $("#f-again").value === "again", createdAt: old && old.createdAt ? old.createdAt : Date.now(),
+      loggedOn: $("#f-logged").value || today(), again: $("#f-again").value === "again", year: old ? old.year : "", createdAt: old && old.createdAt ? old.createdAt : Date.now(),
       art: assets ? formArt : (old ? old.art : "")
     };
     if (uploading) { showErr("Wait for the image to finish uploading."); return; }
@@ -1166,7 +1289,7 @@ a.btn { display: inline-block; text-decoration: none; }
       }
       if (art && has) wanted[path] = 1; else art = "";
       ents.push({ id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released,
-        genre: e.genre, rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, createdAt: e.createdAt, art: art });
+        genre: e.genre, rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: art });
     }
     Object.keys(existing).forEach(function (p) {
       if (/^art\/[0-9a-f]{32}\.jpg$/.test(p) && !wanted[p]) items.push({ path: p, mode: "100644", type: "blob", sha: null });
