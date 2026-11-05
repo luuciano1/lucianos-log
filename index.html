@@ -38,6 +38,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   padding: calc(14px + env(safe-area-inset-top, 0px)) var(--pad) 14px; background: rgb(255 255 255 / .92);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--rule);
 }
+.logo { color: inherit; text-decoration: none; cursor: pointer; }
 .logo { margin: 0; font: 800 20px/1 var(--sans); letter-spacing: -.04em; text-transform: lowercase; }
 .bar-r { display: flex; align-items: center; gap: clamp(12px, 3vw, 32px); }
 @media (max-width: 520px) { .bar .tally { display: none; } }
@@ -229,7 +230,7 @@ a.btn { display: inline-block; text-decoration: none; }
 <body>
 
 <header class="bar">
-  <p class="logo">luciano's log</p>
+  <a class="logo" id="logoLink" href="./" title="Refresh">luciano's log</a>
   <div class="bar-r">
     <span class="tally" id="tally">Opening the log</span>
     <button type="button" class="btn ghost small" id="publishBtn" hidden>Publish</button>
@@ -348,6 +349,12 @@ a.btn { display: inline-block; text-decoration: none; }
       <label for="f-genre">Genre</label>
       <input class="in" id="f-genre" type="text" list="genreHints" autocomplete="off" placeholder="Type your own or pick one">
       <datalist id="genreHints"></datalist>
+    </div>
+
+    <div class="f" id="subField">
+      <label for="f-subs">Subgenres</label>
+      <input class="in" id="f-subs" type="text" autocomplete="off" placeholder="e.g. Pop Rap, Indie Rock, Bedroom Pop">
+      <p class="hint">Separate them with commas. They show on the album and in the subgenre filters.</p>
     </div>
 
     <div class="f">
@@ -621,7 +628,7 @@ a.btn { display: inline-block; text-decoration: none; }
       if (!id) { missing.push(e.title); return; }
       if (e.art === id) return;
       recs.push({ id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-        rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: id });
+        rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), createdAt: e.createdAt, art: id });
     });
     if (recs.length) store.upsertMany(recs);
     if (onlyMissing && !recs.length) return 0;
@@ -739,7 +746,7 @@ a.btn { display: inline-block; text-decoration: none; }
           } else if (!artSrc(e.art)) { e.art = ""; }
         }
         var rec = { id: id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: e.art };
+          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), createdAt: e.createdAt, art: e.art };
         if (e.example) rec.example = true;
         list.push(rec);
       }
@@ -806,7 +813,7 @@ a.btn { display: inline-block; text-decoration: none; }
         var f = films[k], id = lbId(f.key);
         if (have[id]) {
           var o = cur[id], ch = false, rec = { id: o.id, medium: o.medium, title: o.title, creator: o.creator, kind: o.kind, released: o.released, genre: o.genre,
-            rating: o.rating, review: o.review, loggedOn: o.loggedOn, again: o.again, year: o.year || f.year, createdAt: o.createdAt, art: o.art };
+            rating: o.rating, review: o.review, loggedOn: o.loggedOn, again: o.again, year: o.year || f.year, subgenres: (o.subgenres || []).slice(), createdAt: o.createdAt, art: o.art };
           if (!rec.rating && f.rating) { rec.rating = f.rating; ch = true; }
           if (!rec.review && f.review) { rec.review = f.review; ch = true; }
           if (!rec.again && f.again) { rec.again = true; ch = true; }
@@ -815,7 +822,7 @@ a.btn { display: inline-block; text-decoration: none; }
           return;
         }
         list.push({ id: id, medium: "film", title: f.title, creator: "", kind: "Feature", released: "", genre: "", rating: f.rating,
-          review: f.review, loggedOn: f.logged || today(), again: f.again, year: f.year, createdAt: t0 + n, art: "" });
+          review: f.review, loggedOn: f.logged || today(), again: f.again, year: f.year, subgenres: [], createdAt: t0 + n, art: "" });
       });
       if (list.length) store.upsertMany(list);
       backupStatus("Imported " + list.length + (list.length === 1 ? " film" : " films") + (skipped ? " (" + skipped + " already here, left as they were)" : "") + ". Director, genre and release date aren't in Letterboxd's export, so those are blank until you fill them in.");
@@ -850,7 +857,7 @@ a.btn { display: inline-block; text-decoration: none; }
               await grab(pe.art);
               if (le.art !== pe.art) {
                 list.push({ id: le.id, medium: le.medium, title: le.title, creator: le.creator, kind: le.kind, released: le.released, genre: le.genre,
-                  rating: le.rating, review: le.review, loggedOn: le.loggedOn, again: le.again, year: le.year, createdAt: le.createdAt, art: pe.art });
+                  rating: le.rating, review: le.review, loggedOn: le.loggedOn, again: le.again, year: le.year, subgenres: (le.subgenres || []).slice(), createdAt: le.createdAt, art: pe.art });
               }
               restored++;
             } catch (x) {}
@@ -865,7 +872,7 @@ a.btn { display: inline-block; text-decoration: none; }
           } catch (x) { e.art = ""; }
         }
         list.push({ id: id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: e.art });
+          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), createdAt: e.createdAt, art: e.art });
       }
       if (list.length) store.upsertMany(list);
       var added = list.filter(function (x) { return !have[x.id]; }).length;
@@ -930,7 +937,7 @@ a.btn { display: inline-block; text-decoration: none; }
           await localAssets.putWithId(aid, new Blob([b64bytes(b.content)], { type: "image/jpeg" }));
         }
         if (e.art !== aid) list.push({ id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: aid });
+          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), createdAt: e.createdAt, art: aid });
         done++;
       }
       if (list.length) store.upsertMany(list); else render();
@@ -982,7 +989,7 @@ a.btn { display: inline-block; text-decoration: none; }
           gs = topGenres(ar.genres);
         }
         var rec = { id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: e.art };
+          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), createdAt: e.createdAt, art: e.art };
         if (!rec.genre && gs.length) rec.genre = gs.join(", ");
         var fd = full["first-release-date"] || rg["first-release-date"] || "";
         if (!rec.released && /^\d{4}-\d{2}-\d{2}$/.test(fd)) rec.released = fd;
@@ -999,6 +1006,8 @@ a.btn { display: inline-block; text-decoration: none; }
     mbBusy = false; $("#mbBtn").disabled = false;
   }
   $("#mbBtn").addEventListener("click", runMb);
+
+  $("#logoLink").addEventListener("click", function (ev) { ev.preventDefault(); location.reload(); });
 
   /* ---------- TMDB posters and details ---------- */
   var TMDB_KEY = "watched-heard-tmdb-v1";
@@ -1044,7 +1053,7 @@ a.btn { display: inline-block; text-decoration: none; }
         if (!hit) { notFound.push(e.title); continue; }
         var d = await tmdbGet(tok, "/" + (hit.tv ? "tv" : "movie") + "/" + hit.id, { append_to_response: hit.tv ? "" : "credits" });
         var rec = { id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: e.art };
+          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), createdAt: e.createdAt, art: e.art };
         if (!rec.released) { var rd = hit.tv ? d.first_air_date : d.release_date; if (/^\d{4}-\d{2}-\d{2}$/.test(rd || "")) rec.released = rd; }
         if (!rec.genre && d.genres && d.genres.length) rec.genre = d.genres[0].name;
         if (!rec.creator) {
@@ -1291,6 +1300,7 @@ a.btn { display: inline-block; text-decoration: none; }
 
   function currentMedium() { var c = form.querySelector("input[name=medium]:checked"); return c ? c.value : "film"; }
   function setMediumUI(medium, kind) {
+    $("#subField").hidden = medium !== "music";
     $("#f-creator-label").textContent = medium === "film" ? "Director" : "Artist";
     $("#f-logged-label").textContent = medium === "film" ? "Watched on" : "Heard on";
     var ag = $("#f-again"), agv = ag.value;
@@ -1345,6 +1355,7 @@ a.btn { display: inline-block; text-decoration: none; }
     $("#f-creator").value = e ? e.creator : "";
     $("#f-released").value = e ? e.released : "";
     $("#f-genre").value = e ? e.genre : "";
+    $("#f-subs").value = e && e.subgenres ? e.subgenres.join(", ") : "";
     rIn.value = String(e ? e.rating : 0); syncRating();
     $("#f-review").value = e ? e.review : "";
     $("#f-logged").value = e ? (e.loggedOn || today()) : today();
@@ -1387,7 +1398,7 @@ a.btn { display: inline-block; text-decoration: none; }
       medium: medium, title: title, creator: $("#f-creator").value.trim(), kind: $("#f-kind").value,
       released: $("#f-released").value, genre: $("#f-genre").value.trim(),
       rating: Number(rIn.value) || 0, review: $("#f-review").value.trim(),
-      loggedOn: $("#f-logged").value || today(), again: $("#f-again").value === "again", year: old ? old.year : "", createdAt: old && old.createdAt ? old.createdAt : Date.now(),
+      loggedOn: $("#f-logged").value || today(), again: $("#f-again").value === "again", year: old ? old.year : "", subgenres: medium === "music" ? $("#f-subs").value.split(",").map(function (x) { return x.trim(); }).filter(Boolean) : [], createdAt: old && old.createdAt ? old.createdAt : Date.now(),
       art: assets ? formArt : (old ? old.art : "")
     };
     if (uploading) { showErr("Wait for the image to finish uploading."); return; }
@@ -1585,7 +1596,7 @@ a.btn { display: inline-block; text-decoration: none; }
       if (art && LB_ART[art] && !has) { /* shown from Letterboxd, no file needed */ }
       else if (art && has) wanted[path] = 1; else art = "";
       ents.push({ id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released,
-        genre: e.genre, rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, createdAt: e.createdAt, art: art });
+        genre: e.genre, rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), createdAt: e.createdAt, art: art });
     }
     pubMsg("Saving entries...");
     var json = JSON.stringify({ app: "watched-and-heard", version: 2, publishedAt: new Date().toISOString(), entries: ents });
