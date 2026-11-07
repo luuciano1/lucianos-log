@@ -1,0 +1,52 @@
+name: Sync AOTY
+
+on:
+  schedule:
+    - cron: "22,52 * * * *"
+  workflow_dispatch:          # adds a "Run workflow" button
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: site-sync            # shared with the other sync so they never push at once
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests beautifulsoup4
+
+      - name: Pull new album ratings
+        env:
+          AOTY_USER: iuciano
+        run: python .github/scripts/sync_aoty.py
+
+      - name: Commit changes
+        id: commit
+        run: |
+          git config user.name "aoty-sync"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A entries.json art .sync
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Sync from AOTY"
+            git pull --rebase
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rebuild the site
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" || true
