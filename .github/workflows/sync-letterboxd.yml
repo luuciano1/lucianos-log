@@ -1,0 +1,53 @@
+name: Sync Letterboxd
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:          # adds a "Run workflow" button
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: site-sync            # shared with the other sync so they never push at once
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests beautifulsoup4
+
+      - name: Pull new diary entries
+        env:
+          LETTERBOXD_USER: luucianoo
+          TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
+        run: python .github/scripts/sync_letterboxd.py
+
+      - name: Commit changes
+        id: commit
+        run: |
+          git config user.name "letterboxd-sync"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A entries.json art .sync
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Sync from Letterboxd"
+            git pull --rebase
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rebuild the site
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" || true
