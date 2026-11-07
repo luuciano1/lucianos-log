@@ -12,9 +12,19 @@ UA = "lucianos-log-sync/1.0 (+https://github.com/luuciano1/lucianos-log)"
 
 
 def session():
+    """Session that waits and retries when a site is slow or briefly down
+    (timeouts, 429, 5xx), backing off and honoring Retry-After. A refusal (403) isn't retried."""
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+    retry = Retry(total=4, connect=4, read=4, status=4, backoff_factor=5,
+                  status_forcelist=(429, 500, 502, 503, 504),
+                  allowed_methods=("GET",), respect_retry_after_header=True,
+                  raise_on_status=False)
     s = requests.Session()
+    s.mount("https://", HTTPAdapter(max_retries=retry))
     s.headers.update({"User-Agent": UA})
     return s
+
 
 
 def load_entries():
