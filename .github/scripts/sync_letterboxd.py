@@ -23,6 +23,9 @@ def tmdb_info(s, movie_id):
         r = s.get(f"https://api.themoviedb.org/3/movie/{movie_id}",
                   params={"append_to_response": "credits"},
                   headers={"Authorization": f"Bearer {TMDB}"}, timeout=30)
+        if r.status_code == 401:
+            warn("TMDB rejected TMDB_TOKEN. Use the long 'API Read Access Token', not the short API key.")
+            return {}
         if r.status_code != 200:
             return {}
         j = r.json()
@@ -70,10 +73,23 @@ def main():
     on_site_titles = {t for t, _ in on_site}
 
     items = ET.fromstring(r.content).findall("./channel/item")
-    added = 0
+    by_id = {e["id"]: e for e in entries}
+    added = filled = 0
     for it in reversed(items):  # oldest first
         guid = it.findtext("guid") or ""
-        if not guid or guid in seen:
+        if not guid:
+            continue
+        if guid in seen:
+            # fill in details for films synced before the TMDB token was added
+            e = by_id.get("lbx" + re.sub(r"\D", "", guid)[:20])
+            if e and TMDB and not e.get("released"):
+                t = tmdb_info(s, it.findtext("tmdb:movieId", "", NS))
+                if t.get("released"):
+                    for k in ("released", "genre", "creator"):
+                        e[k] = e.get(k) or t.get(k, "")
+                    e["updatedAt"] = now_ms()
+                    print(f"~ filled in {e['title']}")
+                    filled += 1
             continue
         seen.add(guid)
         title = it.findtext("letterboxd:filmTitle", "", NS)
@@ -107,9 +123,9 @@ def main():
 
     state["seen"] = sorted(seen)
     save_state(STATE, state)
-    if added:
+    if added or filled:
         save_entries(data)
-    print(f"Added {added} film(s).")
+    print(f"Added {added} film(s), filled in {filled}.")
     return 0
 
 
