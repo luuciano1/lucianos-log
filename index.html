@@ -514,7 +514,7 @@ a.btn { display: inline-block; text-decoration: none; }
       id: id, medium: d.medium === "film" ? "film" : "music", title: str(d.title), creator: str(d.creator),
       kind: str(d.kind), released: str(d.released) || mg.r || "", genre: str(d.genre) || mg.g || "",
       subgenres: Array.isArray(d.subgenres) ? d.subgenres.map(str).filter(Boolean) : (mg.s || []).slice(), rating: r, review: str(d.review),
-      loggedOn: str(d.loggedOn), again: d.again === true, year: /^\d{4}$/.test(str(d.year)) ? str(d.year) : "", createdAt: Number(d.createdAt) || 0, example: d.example === true,
+      loggedOn: str(d.loggedOn), again: d.again === true, year: /^\d{4}$/.test(str(d.year)) ? str(d.year) : "", createdAt: Number(d.createdAt) || 0, updatedAt: Number(d.updatedAt) || 0, cover: /^https:\/\/[^\s"<>]+$/.test(str(d.cover)) ? str(d.cover) : "", example: d.example === true,
       art: /^[0-9a-f]{32}$/.test(str(d.art)) ? str(d.art) : ""
     };
   }
@@ -546,7 +546,7 @@ a.btn { display: inline-block; text-decoration: none; }
   }
   function tileNode(e) {
     var src = e.art ? artSrc(e.art) : "", lbSrc = LB_ART[lbMatch(e)] || "";
-    if (!src) src = lbSrc;
+    if (!src) src = lbSrc || e.cover || "";
     var t = h("span", { class: "tile " + e.medium + (src ? " has-art" : ""), "aria-hidden": "true", vars: { "--h": tileHue(e) } },
       h("span", { class: "ini", text: initials(e.title) }),
       h("span", { class: "tag", text: KIND_TAG[e.kind] || (e.medium === "film" ? "FILM" : "LP") }));
@@ -554,6 +554,7 @@ a.btn { display: inline-block; text-decoration: none; }
       t.append(h("img", { src: src, alt: "", decoding: "async",
         onerror: function (ev) {
           if (lbSrc && ev.target.getAttribute("src") !== lbSrc) { ev.target.setAttribute("src", lbSrc); return; }
+          if (e.cover && ev.target.getAttribute("src") !== e.cover && ev.target.getAttribute("src") === src && !lbSrc) { ev.target.setAttribute("src", e.cover); return; }
           ev.target.remove(); t.classList.remove("has-art");
         } }));
     }
@@ -628,7 +629,7 @@ a.btn { display: inline-block; text-decoration: none; }
       if (!id) { missing.push(e.title); return; }
       if (e.art === id) return;
       recs.push({ id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-        rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), createdAt: e.createdAt, art: id });
+        rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, art: id });
     });
     if (recs.length) store.upsertMany(recs);
     if (onlyMissing && !recs.length) return 0;
@@ -654,6 +655,14 @@ a.btn { display: inline-block; text-decoration: none; }
     }
   };
 
+  var DEL_KEY = "watched-heard-deleted-v1";
+  function deletedSet() { try { var a = JSON.parse(localStorage.getItem(DEL_KEY) || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+  function markDeleted(id) { try { var a = deletedSet(); if (a.indexOf(id) < 0) { a.push(id); localStorage.setItem(DEL_KEY, JSON.stringify(a.slice(-2000))); } } catch (e) {} }
+  function recOf(e, art) {
+    return { id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
+      rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "",
+      createdAt: e.createdAt, updatedAt: e.updatedAt || 0, art: art === undefined ? e.art : art };
+  }
   function makeLocalStore() {
     var KEY = "watched-heard-entries-v1", mem = [];
     try { var raw = localStorage.getItem(KEY); if (raw) mem = JSON.parse(raw) || []; } catch (e) { mem = []; }
@@ -664,14 +673,17 @@ a.btn { display: inline-block; text-decoration: none; }
       count: function () { return mem.length; },
       start: push,
       addRaw: function (list) { list.forEach(function (x) { mem.push(x); }); persist(); },
-      upsertMany: function (list) {
+      upsertMany: function (list, keepTime) {
+        var now = Date.now();
         list.forEach(function (x) {
+          if (!keepTime) x.updatedAt = now;
           var i = mem.findIndex(function (m) { return m.id === x.id; });
           if (i >= 0) mem[i] = x; else mem.push(x);
         });
         persist(); push();
       },
       save: function (id, obj) {
+        obj = Object.assign({}, obj, { updatedAt: Date.now() });
         if (id) {
           var i = mem.findIndex(function (x) { return x.id === id; });
           if (i >= 0) mem[i] = Object.assign({ id: id }, obj);
@@ -682,7 +694,7 @@ a.btn { display: inline-block; text-decoration: none; }
         persist(); push();
         return Promise.resolve(id);
       },
-      remove: function (id) { mem = mem.filter(function (x) { return x.id !== id; }); persist(); push(); return Promise.resolve(); }
+      remove: function (id) { markDeleted(id); mem = mem.filter(function (x) { return x.id !== id; }); persist(); push(); return Promise.resolve(); }
     };
   }
 
@@ -745,8 +757,16 @@ a.btn { display: inline-block; text-decoration: none; }
             try { await localAssets.putWithId(e.art, await (await fetch(du)).blob()); } catch (err) { e.art = ""; }
           } else if (!artSrc(e.art)) { e.art = ""; }
         }
+        if (!e.art && e.cover && assets) {
+          backupStatus("Saving cover " + (i + 1) + " of " + data.entries.length + "...");
+          try {
+            var cr = await fetch(e.cover);
+            if (!cr.ok) throw new Error("img");
+            e.art = (await localAssets.upload(await toJpeg(await cr.blob()))).id;
+          } catch (err) { /* the site couldn't download it; it will show straight from the link instead */ }
+        }
         var rec = { id: id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), createdAt: e.createdAt, art: e.art };
+          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, art: e.art };
         if (e.example) rec.example = true;
         list.push(rec);
       }
@@ -813,7 +833,7 @@ a.btn { display: inline-block; text-decoration: none; }
         var f = films[k], id = lbId(f.key);
         if (have[id]) {
           var o = cur[id], ch = false, rec = { id: o.id, medium: o.medium, title: o.title, creator: o.creator, kind: o.kind, released: o.released, genre: o.genre,
-            rating: o.rating, review: o.review, loggedOn: o.loggedOn, again: o.again, year: o.year || f.year, subgenres: (o.subgenres || []).slice(), createdAt: o.createdAt, art: o.art };
+            rating: o.rating, review: o.review, loggedOn: o.loggedOn, again: o.again, year: o.year || f.year, subgenres: (o.subgenres || []).slice(), cover: o.cover || "", createdAt: o.createdAt, art: o.art };
           if (!rec.rating && f.rating) { rec.rating = f.rating; ch = true; }
           if (!rec.review && f.review) { rec.review = f.review; ch = true; }
           if (!rec.again && f.again) { rec.again = true; ch = true; }
@@ -837,8 +857,8 @@ a.btn { display: inline-block; text-decoration: none; }
       if (!res.ok) { if (!quiet) backupStatus("Couldn't find entries.json on the site (" + res.status + ")."); return 0; }
       var data = await res.json();
       if (!data || data.app !== "watched-and-heard" || !Array.isArray(data.entries)) { if (!quiet) backupStatus("entries.json isn't in the right format."); return 0; }
-      var have = {}, cur = {}; state.entries.forEach(function (e) { have[e.id] = 1; cur[e.id] = e; });
-      var art = data.art && typeof data.art === "object" ? data.art : {}, list = [], skipped = 0, restored = 0;
+      var have = {}, cur = {}, del = deletedSet(); state.entries.forEach(function (e) { have[e.id] = 1; cur[e.id] = e; });
+      var art = data.art && typeof data.art === "object" ? data.art : {}, list = [], skipped = 0, restored = 0, updated = 0;
       async function grab(aid) {
         var du = art[aid], src = typeof du === "string" && /^data:image\/(jpeg|png|webp);base64,/.test(du) ? du : "art/" + aid + ".jpg?t=" + Date.now();
         var r = await fetch(src, { cache: "no-store" }); if (!r.ok) throw new Error("img");
@@ -849,15 +869,19 @@ a.btn { display: inline-block; text-decoration: none; }
         var raw = data.entries[i];
         if (!raw || typeof raw !== "object") continue;
         var id = typeof raw.id === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(raw.id) ? raw.id : "p" + randHex().slice(0, 12);
+        if (!have[id] && del.indexOf(id) >= 0) continue;
         if (have[id]) {
           var pe = norm(id, raw), le = cur[id];
+          if ((pe.updatedAt || 0) > (le.updatedAt || 0)) {
+            if (pe.art && !artSrc(pe.art)) { try { await grab(pe.art); } catch (x) {} }
+            list.push(recOf(pe)); updated++; continue;
+          }
           if (pe.art && !artSrc(pe.art)) {
             if (!quiet) backupStatus("Restoring covers... " + (restored + 1));
             try {
               await grab(pe.art);
               if (le.art !== pe.art) {
-                list.push({ id: le.id, medium: le.medium, title: le.title, creator: le.creator, kind: le.kind, released: le.released, genre: le.genre,
-                  rating: le.rating, review: le.review, loggedOn: le.loggedOn, again: le.again, year: le.year, subgenres: (le.subgenres || []).slice(), createdAt: le.createdAt, art: pe.art });
+                list.push(recOf(le, pe.art));
               }
               restored++;
             } catch (x) {}
@@ -871,12 +895,11 @@ a.btn { display: inline-block; text-decoration: none; }
             await grab(e.art);
           } catch (x) { e.art = ""; }
         }
-        list.push({ id: id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), createdAt: e.createdAt, art: e.art });
+        list.push(recOf(e));
       }
-      if (list.length) store.upsertMany(list);
+      if (list.length) store.upsertMany(list, true);
       var added = list.filter(function (x) { return !have[x.id]; }).length;
-      backupStatus("Added " + added + (added === 1 ? " published entry" : " published entries") + (restored ? " and restored " + restored + " covers from your repo" : "") + ".");
+      backupStatus("Added " + added + (added === 1 ? " published entry" : " published entries") + (updated ? ", updated " + updated : "") + (restored ? " and restored " + restored + " covers from your repo" : "") + ".");
       return list.length + restored;
     } catch (x) { if (!quiet) backupStatus("Couldn't load the published entries."); return 0; }
   }
@@ -937,7 +960,7 @@ a.btn { display: inline-block; text-decoration: none; }
           await localAssets.putWithId(aid, new Blob([b64bytes(b.content)], { type: "image/jpeg" }));
         }
         if (e.art !== aid) list.push({ id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), createdAt: e.createdAt, art: aid });
+          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, art: aid });
         done++;
       }
       if (list.length) store.upsertMany(list); else render();
@@ -989,7 +1012,7 @@ a.btn { display: inline-block; text-decoration: none; }
           gs = topGenres(ar.genres);
         }
         var rec = { id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), createdAt: e.createdAt, art: e.art };
+          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, art: e.art };
         if (!rec.genre && gs.length) rec.genre = gs.join(", ");
         var fd = full["first-release-date"] || rg["first-release-date"] || "";
         if (!rec.released && /^\d{4}-\d{2}-\d{2}$/.test(fd)) rec.released = fd;
@@ -1053,7 +1076,7 @@ a.btn { display: inline-block; text-decoration: none; }
         if (!hit) { notFound.push(e.title); continue; }
         var d = await tmdbGet(tok, "/" + (hit.tv ? "tv" : "movie") + "/" + hit.id, { append_to_response: hit.tv ? "" : "credits" });
         var rec = { id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), createdAt: e.createdAt, art: e.art };
+          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, art: e.art };
         if (!rec.released) { var rd = hit.tv ? d.first_air_date : d.release_date; if (/^\d{4}-\d{2}-\d{2}$/.test(rd || "")) rec.released = rd; }
         if (!rec.genre && d.genres && d.genres.length) rec.genre = d.genres[0].name;
         if (!rec.creator) {
@@ -1398,7 +1421,7 @@ a.btn { display: inline-block; text-decoration: none; }
       medium: medium, title: title, creator: $("#f-creator").value.trim(), kind: $("#f-kind").value,
       released: $("#f-released").value, genre: $("#f-genre").value.trim(),
       rating: Number(rIn.value) || 0, review: $("#f-review").value.trim(),
-      loggedOn: $("#f-logged").value || today(), again: $("#f-again").value === "again", year: old ? old.year : "", subgenres: medium === "music" ? $("#f-subs").value.split(",").map(function (x) { return x.trim(); }).filter(Boolean) : [], createdAt: old && old.createdAt ? old.createdAt : Date.now(),
+      loggedOn: $("#f-logged").value || today(), again: $("#f-again").value === "again", year: old ? old.year : "", cover: old ? old.cover || "" : "", subgenres: medium === "music" ? $("#f-subs").value.split(",").map(function (x) { return x.trim(); }).filter(Boolean) : [], createdAt: old && old.createdAt ? old.createdAt : Date.now(),
       art: assets ? formArt : (old ? old.art : "")
     };
     if (uploading) { showErr("Wait for the image to finish uploading."); return; }
@@ -1580,8 +1603,26 @@ a.btn { display: inline-block; text-decoration: none; }
     var existing = {};
     tree.tree.forEach(function (t) { if (t.type === "blob") existing[t.path] = t.sha; });
     var items = [], wanted = {}, ents = [], uploaded = 0;
-    for (var i = 0; i < state.entries.length; i++) {
-      var e = state.entries[i], art = e.art, path = "art/" + art + ".jpg", has = !!(art && existing[path]);
+    /* merge anything newer on GitHub (like automatic Letterboxd syncs) so publishing never wipes it */
+    var source = state.entries.slice();
+    if (existing["entries.json"]) {
+      try {
+        pubMsg("Checking for new entries on GitHub...");
+        var rj = await gh(cfg, "GET", "/git/blobs/" + existing["entries.json"]);
+        var remote = JSON.parse(new TextDecoder().decode(b64bytes(rj.content)));
+        var idx = {}, del = deletedSet(), pulled = [];
+        source.forEach(function (x, k) { idx[x.id] = k; });
+        (remote.entries || []).forEach(function (raw) {
+          if (!raw || typeof raw.id !== "string") return;
+          var r = norm(raw.id, raw);
+          if (idx[r.id] === undefined) { if (del.indexOf(r.id) < 0) { source.push(r); pulled.push(recOf(r)); } }
+          else if ((r.updatedAt || 0) > (source[idx[r.id]].updatedAt || 0)) { source[idx[r.id]] = r; pulled.push(recOf(r)); }
+        });
+        if (pulled.length) store.upsertMany(pulled, true);
+      } catch (x) { throw new Error("Couldn't read the entries already on GitHub, so nothing was published"); }
+    }
+    for (var i = 0; i < source.length; i++) {
+      var e = source[i], art = e.art, path = "art/" + art + ".jpg", has = !!(art && existing[path]);
       if (art && !has) {
         var blob = null;
         try { blob = await idbRun("readonly", function (s) { return s.get(art); }); } catch (x) {}
@@ -1596,7 +1637,7 @@ a.btn { display: inline-block; text-decoration: none; }
       if (art && LB_ART[art] && !has) { /* shown from Letterboxd, no file needed */ }
       else if (art && has) wanted[path] = 1; else art = "";
       ents.push({ id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released,
-        genre: e.genre, rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), createdAt: e.createdAt, art: art });
+        genre: e.genre, rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, updatedAt: e.updatedAt || 0, art: art });
     }
     pubMsg("Saving entries...");
     var json = JSON.stringify({ app: "watched-and-heard", version: 2, publishedAt: new Date().toISOString(), entries: ents });
@@ -1703,7 +1744,7 @@ a.btn { display: inline-block; text-decoration: none; }
     } catch (e) { assets = null; }
     await seedOnce();
     store.start();
-    if (!store.count() || state.entries.some(function (e) { return e.art && !artSrc(e.art); })) await loadPublished(true);
+    await loadPublished(true);
     try {
       if (localStorage.getItem("lucianos-log-lb-posters-v2") !== "1") { applyLbPosters(false); localStorage.setItem("lucianos-log-lb-posters-v2", "1"); }
       else applyLbPosters(true);
