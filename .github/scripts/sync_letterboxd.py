@@ -39,39 +39,15 @@ def tmdb_info(s, movie_id):
         return {}
 
 
-def chosen_posters(s):
-    """Map diary viewing id -> (film slug, alternative poster id) for posters you picked."""
-    out = {}
+def picked_posters():
+    """.sync/posters.json: {diary viewing id: Letterboxd poster URL} for posters you picked.
+    Letterboxd doesn't let GitHub read your diary page, so this file is kept up to date
+    from your own browser instead."""
     try:
-        from bs4 import BeautifulSoup
-        r = s.get(f"https://letterboxd.com/{USER}/films/diary/", timeout=30)
-        if r.status_code != 200:
-            print(f"  diary page answered {r.status_code}; using default posters")
-            return out
-        for row in BeautifulSoup(r.text, "html.parser").select("tr.diary-entry-row"):
-            vid = row.get("data-viewing-id")
-            el = row.select_one("[data-resolvable-poster-path]")
-            if not (vid and el):
-                continue
-            try:
-                alt = json.loads(el["data-resolvable-poster-path"]).get("preferredAlternativePosterId")
-            except Exception:
-                alt = None
-            if alt and el.get("data-item-slug"):
-                out[vid] = (el["data-item-slug"], alt)
-    except Exception as e:
-        print("  couldn't read chosen posters:", e)
-    return out
-
-
-def chosen_poster_url(s, slug, alt):
-    try:
-        r = s.get(f"https://letterboxd.com/film/{slug}/poster/std/{alt}/1000/", timeout=30)
-        if r.status_code == 200:
-            return r.json().get("url") or ""
-    except Exception as e:
-        print("  chosen poster lookup failed:", e)
-    return ""
+        with open(os.path.join(os.path.dirname(ENTRIES_PATH), ".sync", "posters.json"), encoding="utf-8") as f:
+            return {str(k): v for k, v in json.load(f).items() if str(v).startswith("https://")}
+    except Exception:
+        return {}
 
 
 def review_text(desc):
@@ -110,27 +86,22 @@ def main():
     items = ET.fromstring(r.content).findall("./channel/item")
     by_id = {e["id"]: e for e in entries}
     added = filled = 0
-    posters = chosen_posters(s)
-    picked = state.setdefault("posters", {})  # viewing id -> poster id we last saved
+    posters = picked_posters()
     for it in reversed(items):  # oldest first
         guid = it.findtext("guid") or ""
         if not guid:
             continue
         if guid in seen:
-            # swap in the poster you picked on Letterboxd if it changed (or was never used)
+            # show the poster you picked on Letterboxd (the site loads it straight from Letterboxd)
             vid = re.sub(r"\D", "", guid)
             e = by_id.get("lbx" + vid[:20])
-            if e and vid in posters and picked.get(vid) != posters[vid][1]:
-                url = chosen_poster_url(s, *posters[vid])
-                new_id = hashlib.md5((guid + posters[vid][1]).encode()).hexdigest()
-                if url and save_art(s, url, new_id):
-                    old = os.path.join(os.path.dirname(ENTRIES_PATH), "art", (e.get("art") or "x") + ".jpg")
-                    if e.get("art") and os.path.exists(old):
-                        os.remove(old)
-                    e["art"], e["updatedAt"] = new_id, now_ms()
-                    picked[vid] = posters[vid][1]
-                    print(f"~ poster updated for {e['title']}")
-                    filled += 1
+            if e and vid in posters and e.get("cover") != posters[vid]:
+                old = os.path.join(os.path.dirname(ENTRIES_PATH), "art", (e.get("art") or "x") + ".jpg")
+                if e.get("art") and os.path.exists(old):
+                    os.remove(old)
+                e["cover"], e["art"], e["updatedAt"] = posters[vid], "", now_ms()
+                print(f"~ poster updated for {e['title']}")
+                filled += 1
             # fill in details for films synced before the TMDB token was added
             e = by_id.get("lbx" + re.sub(r"\D", "", guid)[:20])
             if e and TMDB and not e.get("released"):
@@ -159,16 +130,13 @@ def main():
         img = re.search(r'<img src="([^"]+)"', desc)
         # poster priority: the one you picked on Letterboxd > Letterboxd default > TMDB
         vid = re.sub(r"\D", "", guid)
-        poster = chosen_poster_url(s, *posters[vid]) if vid in posters else ""
-        art_id = hashlib.md5(guid.encode()).hexdigest()
-        if poster:
-            art_id = hashlib.md5((guid + posters[vid][1]).encode()).hexdigest()
-            picked[vid] = posters[vid][1]
-        elif img:
-            poster = img.group(1).replace("-0-600-0-900-crop", "-0-1000-0-1500-crop")
-        art = save_art(s, poster, art_id) if poster else ""
-        if not art and t.get("poster"):
-            art = save_art(s, t["poster"], art_id)
+        cover, art = posters.get(vid, ""), ""
+        if not cover:
+            art_id = hashlib.md5(guid.encode()).hexdigest()
+            if img:
+                art = save_art(s, img.group(1).replace("-0-600-0-900-crop", "-0-1000-0-1500-crop"), art_id)
+            if not art and t.get("poster"):
+                art = save_art(s, t["poster"], art_id)
         rating = it.findtext("letterboxd:memberRating", "", NS)
         entries.insert(0, {
             "id": "lbx" + re.sub(r"\D", "", guid)[:20], "medium": "film",
@@ -178,6 +146,7 @@ def main():
             "loggedOn": it.findtext("letterboxd:watchedDate", "", NS),
             "again": it.findtext("letterboxd:rewatch", "", NS) == "Yes",
             "year": "", "subgenres": [], "createdAt": now_ms(), "updatedAt": now_ms(), "art": art,
+            "cover": cover,
         })
         on_site.add((key, (t.get("released") or year)[:4]))
         added += 1
