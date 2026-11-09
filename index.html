@@ -152,8 +152,12 @@ button:focus-visible, .row:focus-visible { outline: 2px solid var(--ink); outlin
 .entry:has(.body) { grid-column: 1 / -1; padding: 8px 0 24px; border-block: 1px solid var(--ink); }
 .entry:has(.body) .row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; padding-top: 24px; }
 @media (min-width: 720px) {
-  .entry:has(.body) .row { grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 48px; }
-  .entry:has(.body) .body { margin-left: calc(340px + 48px); }
+  /* poster on the left, title and review stacked on the right with no gap under the title */
+  .entry:has(.body) { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 48px; }
+  .entry:has(.body) .row { grid-column: 1 / -1; grid-row: 1 / span 2; grid-template-columns: subgrid; grid-template-rows: subgrid; gap: 0 48px; align-items: start; }
+  .entry:has(.body) .row > .tile { grid-column: 1; grid-row: 1 / span 2; }
+  .entry:has(.body) .row > .main { grid-column: 2; grid-row: 1; }
+  .entry:has(.body) .body { grid-column: 2; grid-row: 2; margin-left: 0; position: relative; }
 }
 .entry:has(.body) .row:hover .tile { opacity: 1; }
 .entry:has(.body) .title { font-size: clamp(36px, 6vw, 84px); line-height: .92; letter-spacing: -.05em; }
