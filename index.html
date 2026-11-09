@@ -46,7 +46,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .wrap { padding: 0 var(--pad) 96px; }
 
 /* hero wordmark */
-.mast { padding: clamp(40px, 9vw, 120px) 0 clamp(28px, 5vw, 56px); border-bottom: 1px solid var(--ink); }
+.mast { display: flex; flex-direction: column; justify-content: flex-end; min-height: min(82vh, 980px); min-height: min(82svh, 980px); padding: clamp(40px, 9vw, 120px) 0 clamp(28px, 5vw, 56px); border-bottom: 1px solid var(--ink); }
+@media (max-width: 720px) { .mast { min-height: 62vh; min-height: 62svh; } }
 .mark { margin: 0; font: 800 clamp(64px, 17vw, 260px)/.82 var(--sans); letter-spacing: -.065em; text-transform: lowercase; margin-left: -.04em; }
 .mark em { font-style: normal; }
 .mast-row { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; margin-top: clamp(20px, 3vw, 36px); }
@@ -137,7 +138,9 @@ button:focus-visible, .row:focus-visible { outline: 2px solid var(--ink); outlin
 .ini { font: 800 clamp(36px, 7vw, 72px)/1 var(--sans); letter-spacing: -.06em; text-transform: lowercase; }
 .tag { position: absolute; left: 12px; top: 12px; font: 500 10px/1 var(--sans); letter-spacing: .16em; opacity: .7; }
 .tile.has-art { display: block; aspect-ratio: auto; background: none; }
-.tile img { display: block; width: 100%; height: auto; }
+.tile img { display: block; width: 100%; height: auto; opacity: 0; transition: opacity .35s ease; }
+.tile img.in { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .tile img { transition: none; } }
 .tile.has-art .ini, .tile.has-art .tag { display: none; }
 .main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .title { font: 700 17px/1.15 var(--sans); letter-spacing: -.02em; overflow-wrap: anywhere; }
@@ -555,7 +558,8 @@ a.btn { display: inline-block; text-decoration: none; }
       h("span", { class: "ini", text: initials(e.title) }),
       h("span", { class: "tag", text: KIND_TAG[e.kind] || (e.medium === "film" ? "FILM" : "LP") }));
     if (src) {
-      t.append(h("img", { src: src, alt: "", decoding: "async",
+      t.append(h("img", { loading: "lazy", decoding: "async", alt: "", src: src,
+        onload: function (ev) { ev.target.classList.add("in"); },
         onerror: function (ev) {
           if (lbSrc && ev.target.getAttribute("src") !== lbSrc) { ev.target.setAttribute("src", lbSrc); return; }
           if (e.cover && ev.target.getAttribute("src") !== e.cover && ev.target.getAttribute("src") === src && !lbSrc) { ev.target.setAttribute("src", e.cover); return; }
