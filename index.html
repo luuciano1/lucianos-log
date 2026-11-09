@@ -139,7 +139,7 @@ button:focus-visible, .row:focus-visible { outline: 2px solid var(--ink); outlin
 .tag { position: absolute; left: 12px; top: 12px; font: 500 10px/1 var(--sans); letter-spacing: .16em; opacity: .7; }
 .tile.has-art { display: block; aspect-ratio: auto; background: none; }
 .tile img { display: block; width: 100%; height: auto; opacity: 0; transition: opacity .35s ease; }
-.tile img.in { opacity: 1; }
+.tile img.shown { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .tile img { transition: none; } }
 .tile.has-art .ini, .tile.has-art .tag { display: none; }
 .main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
@@ -559,7 +559,7 @@ a.btn { display: inline-block; text-decoration: none; }
       h("span", { class: "tag", text: KIND_TAG[e.kind] || (e.medium === "film" ? "FILM" : "LP") }));
     if (src) {
       t.append(h("img", { loading: "lazy", decoding: "async", alt: "", src: src,
-        onload: function (ev) { ev.target.classList.add("in"); },
+        onload: function (ev) { ev.target.classList.add("shown"); },
         onerror: function (ev) {
           if (lbSrc && ev.target.getAttribute("src") !== lbSrc) { ev.target.setAttribute("src", lbSrc); return; }
           if (e.cover && ev.target.getAttribute("src") !== e.cover && ev.target.getAttribute("src") === src && !lbSrc) { ev.target.setAttribute("src", e.cover); return; }
