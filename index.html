@@ -196,6 +196,44 @@ button:focus-visible, .row:focus-visible { outline: 2px solid var(--ink); outlin
   @keyframes pulse { 50% { opacity: .45; } }
 }
 
+/* year-end lists */
+.lists { display: flex; flex-direction: column; gap: 72px; padding-bottom: 24px; }
+.lists-top { display: flex; justify-content: flex-end; margin-bottom: -40px; }
+.yr-h { margin: 0 0 28px; padding-bottom: 14px; border-bottom: 1px solid var(--ink); font: 800 clamp(48px, 9vw, 128px)/.85 var(--sans); letter-spacing: -.06em; }
+.yr-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 56px; }
+@media (min-width: 900px) { .yr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 64px; } }
+.lcard-h { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin: 0 0 18px; }
+.lcard-h h3 { margin: 0; font: 700 clamp(20px, 2.4vw, 28px)/1.05 var(--sans); letter-spacing: -.03em; text-transform: lowercase; }
+.rk { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.rk > li { border-top: 1px solid var(--rule); }
+.rk > li:last-child { border-bottom: 1px solid var(--rule); }
+.rk-row { display: grid; grid-template-columns: 44px 56px minmax(0, 1fr); gap: 16px; align-items: center; width: 100%; padding: 12px 0; background: none; border: 0; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.rk-row:hover .rk-t { text-decoration: underline; text-underline-offset: 3px; }
+.rk-n { font: 800 28px/1 var(--sans); letter-spacing: -.05em; font-variant-numeric: tabular-nums; }
+.rk-row .tile { width: 56px; }
+.rk-row .tile .ini { font-size: 18px; }
+.rk-row .tile .tag { display: none; }
+.rk-txt { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.rk-t { font: 700 16px/1.2 var(--sans); letter-spacing: -.02em; overflow-wrap: anywhere; }
+.rk-by { font: 400 13px/1.3 var(--sans); color: var(--ink-soft); }
+.rk-txt .rating { margin-top: 2px; }
+.lists-empty h2 { margin: 0 0 8px; font: 800 clamp(28px, 4vw, 44px)/1 var(--sans); letter-spacing: -.04em; }
+.lists-empty p { margin: 0 0 20px; color: var(--ink-soft); }
+.pick-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.pick-list > li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--rule); }
+.pick-list > li:last-child { border-bottom: 1px solid var(--rule); }
+.pick-list .n { font: 800 18px/1 var(--sans); letter-spacing: -.04em; }
+.pick-list .nm { min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+.pick-list .nm small { display: block; color: var(--ink-soft); font-size: 12px; }
+.mv { display: flex; gap: 4px; }
+.mv button { width: 32px; height: 32px; padding: 0; border: 1px solid var(--rule); background: none; color: inherit; cursor: pointer; font: 600 14px/1 var(--sans); }
+.mv button:hover { border-color: var(--ink); }
+.mv button:disabled { opacity: .3; cursor: default; }
+.found { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.found button { display: block; width: 100%; padding: 8px 0; border: 0; border-bottom: 1px solid var(--rule); background: none; color: inherit; text-align: left; cursor: pointer; font: 400 14px/1.3 var(--sans); }
+.found button:hover { text-decoration: underline; }
+.found small { color: var(--ink-soft); }
+
 /* editor */
 dialog {
   width: min(620px, 100%); max-width: 100%; max-height: 100dvh; margin: 0 0 0 auto; height: 100dvh; padding: 0; overflow: auto;
@@ -259,6 +297,7 @@ a.btn { display: inline-block; text-decoration: none; }
       <button type="button" data-m="all" aria-pressed="true">All <small id="c-all">0</small></button>
       <button type="button" data-m="film" aria-pressed="false">Films <small id="c-film">0</small></button>
       <button type="button" data-m="music" aria-pressed="false">Music <small id="c-music">0</small></button>
+      <button type="button" data-m="lists" aria-pressed="false">Lists <small id="c-lists">0</small></button>
     </div>
     <div class="find">
       <input class="in" id="q" type="search" placeholder="Search titles, people, genres, reviews" aria-label="Search the log" autocomplete="off">
@@ -276,6 +315,7 @@ a.btn { display: inline-block; text-decoration: none; }
 
   <div class="notes" id="notes"></div>
   <ol class="log" id="log"></ol>
+  <section class="lists" id="lists" aria-label="Year-end lists" hidden></section>
 
   <section class="backup" aria-label="Backup">
     <p class="hint">Everything is saved in this browser on this device. Export a backup now and then. Importing it on another device brings your entries and art across.</p>
@@ -406,6 +446,38 @@ a.btn { display: inline-block; text-decoration: none; }
   </form>
 </dialog>
 
+<dialog id="listDlg" aria-labelledby="listTitle">
+  <form class="sheet" id="listForm" novalidate>
+    <h2 id="listTitle">list</h2>
+    <div class="two">
+      <div class="f">
+        <label for="l-year">Year</label>
+        <input class="in" id="l-year" type="number" inputmode="numeric" min="1900" max="2100" step="1">
+      </div>
+      <div class="f">
+        <label for="l-kind">List</label>
+        <select class="in" id="l-kind"><option value="film">Top films</option><option value="music">Top albums</option></select>
+      </div>
+    </div>
+    <div class="f">
+      <label>Ranking</label>
+      <ol class="pick-list" id="l-items"></ol>
+      <p class="hint" id="l-count"></p>
+    </div>
+    <div class="f">
+      <label for="l-q">Add from your log</label>
+      <input class="in" id="l-q" type="search" autocomplete="off" placeholder="Search your films or albums">
+      <div class="found" id="l-found"></div>
+    </div>
+    <p class="err" id="l-err" role="alert"></p>
+    <div class="actions">
+      <button type="submit" class="btn accent">Save list</button>
+      <button type="button" class="btn ghost" id="l-cancel">Cancel</button>
+      <button type="button" class="btn danger push" id="l-del" hidden>Delete list</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="tmdbDlg" aria-labelledby="tmdbTitle">
   <form class="sheet" id="tmdbForm" novalidate>
     <h2 id="tmdbTitle">posters and film details</h2>
@@ -466,7 +538,7 @@ a.btn { display: inline-block; text-decoration: none; }
   var $ = function (s) { return document.querySelector(s); };
   var state = {
     entries: [], loaded: false, canWrite: true, mode: "pending", slow: false, err: "",
-    medium: "all", genre: "", sub: "", q: "", sort: "logged",
+    medium: "all", genre: "", sub: "", q: "", sort: "logged", lists: [],
     open: new Set(), editing: null, confirmDel: false, confirmClear: false
   };
   var store = null;
@@ -740,7 +812,7 @@ a.btn { display: inline-block; text-decoration: none; }
           if (blob) art[id] = await blobToDataUrl(blob);
         }
       }
-      var payload = { app: "watched-and-heard", version: 1, exportedAt: new Date().toISOString(), entries: state.entries, art: art };
+      var payload = { app: "watched-and-heard", version: 1, exportedAt: new Date().toISOString(), entries: state.entries, lists: state.lists, art: art };
       var url = URL.createObjectURL(new Blob([JSON.stringify(payload)], { type: "application/json" }));
       var a = h("a", { href: url, download: "lucianos-log-backup-" + today() + ".json" });
       document.body.append(a); a.click(); a.remove();
@@ -779,6 +851,10 @@ a.btn { display: inline-block; text-decoration: none; }
         list.push(rec);
       }
       store.upsertMany(list);
+      if (Array.isArray(data.lists)) {
+        var mli = mergeLists(state.lists, data.lists.map(function (x) { return Object.assign({}, x, { updatedAt: Date.now() }); }));
+        if (mli.changed) { state.lists = mli.lists; saveLocalLists(); render(); }
+      }
       backupStatus("Imported " + list.length + (list.length === 1 ? " entry." : " entries."));
     } catch (e) { backupStatus("Couldn't read that file."); }
   }
@@ -906,6 +982,8 @@ a.btn { display: inline-block; text-decoration: none; }
         list.push(recOf(e));
       }
       if (list.length) store.upsertMany(list, true);
+      var ml = mergeLists(state.lists, data.lists);
+      if (ml.changed) { state.lists = ml.lists; saveLocalLists(); render(); }
       var added = list.filter(function (x) { return !have[x.id]; }).length;
       backupStatus("Added " + added + (added === 1 ? " published entry" : " published entries") + (updated ? ", updated " + updated : "") + (restored ? " and restored " + restored + " covers from your repo" : "") + ".");
       return list.length + restored;
@@ -1171,6 +1249,7 @@ a.btn { display: inline-block; text-decoration: none; }
     $("#tally").textContent = !state.loaded ? "Opening the log" : !all.length ? "Nothing logged yet" :
       f + (f === 1 ? " film" : " films") + " · " + m + (m === 1 ? " record" : " records") + (avg ? " · avg " + avg + " of 5" : "");
     $("#c-all").textContent = all.length; $("#c-film").textContent = f; $("#c-music").textContent = m;
+    $("#c-lists").textContent = state.lists.length;
     document.querySelectorAll("#tabs button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.m === state.medium)); });
     $("#fab").hidden = !(state.loaded && state.canWrite);
   }
@@ -1257,7 +1336,7 @@ a.btn { display: inline-block; text-decoration: none; }
           h("span", { class: "logged", text: (e.medium === "film" ? "Watched " : "Heard ") + (fmtDate(e.loggedOn) || "date unknown") + " · " + (e.medium === "film" ? (e.again ? "Rewatch" : "First watch") : (e.again ? "Relisten" : "First listen")) }),
           state.canWrite ? h("button", { class: "btn ghost small", type: "button", onclick: function () { openEditor(e); } }, "Edit") : null));
     }
-    return h("li", { class: "entry" }, row, body);
+    return h("li", { class: "entry", "data-id": e.id }, row, body);
   }
 
   function renderList() {
@@ -1281,7 +1360,156 @@ a.btn { display: inline-block; text-decoration: none; }
     box.replaceChildren.apply(box, nodes);
   }
 
-  function render() { renderHead(); renderChips(); renderSubChips(); renderNotes(); renderList(); }
+  function render() { renderHead(); renderChips(); renderSubChips(); renderNotes(); renderList(); renderLists(); }
+
+  /* ---------- year-end lists ---------- */
+  var LISTS_KEY = "watched-heard-lists-v1";
+  function normList(raw) {
+    if (!raw || typeof raw !== "object" || typeof raw.id !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(raw.id)) return null;
+    var year = String(raw.year || "").trim();
+    if (!/^\d{4}$/.test(year)) return null;
+    return {
+      id: raw.id, year: year, kind: raw.kind === "music" ? "music" : "film",
+      items: Array.isArray(raw.items) ? raw.items.filter(function (x) { return typeof x === "string"; }).slice(0, 10) : [],
+      updatedAt: Number(raw.updatedAt) || 0
+    };
+  }
+  function cleanLists(arr) { return (Array.isArray(arr) ? arr : []).map(normList).filter(Boolean); }
+  function loadLocalLists() { try { return cleanLists(JSON.parse(localStorage.getItem(LISTS_KEY) || "[]")); } catch (e) { return []; } }
+  function saveLocalLists() { try { localStorage.setItem(LISTS_KEY, JSON.stringify(state.lists)); return true; } catch (e) { return false; } }
+  function mergeLists(local, remote) {
+    var out = local.slice(), idx = {}, del = deletedSet(), changed = false;
+    out.forEach(function (l, i) { idx[l.id] = i; });
+    cleanLists(remote).forEach(function (r) {
+      if (idx[r.id] === undefined) { if (del.indexOf(r.id) < 0) { out.push(r); changed = true; } }
+      else if (r.updatedAt > out[idx[r.id]].updatedAt) { out[idx[r.id]] = r; changed = true; }
+    });
+    return { lists: out, changed: changed };
+  }
+  function listName(l, n) {
+    return "top " + (n || l.items.length || 10) + (l.kind === "music" ? " albums" : " films");
+  }
+  function jumpTo(e) {
+    state.medium = e.medium; state.genre = ""; state.sub = ""; state.q = ""; $("#q").value = "";
+    state.open.add(e.id); render();
+    var el = document.querySelector('.entry[data-id="' + (window.CSS && CSS.escape ? CSS.escape(e.id) : e.id) + '"]');
+    if (el) el.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+  function listCard(l, byId) {
+    var picks = l.items.map(function (id) { return byId[id]; }).filter(Boolean);
+    return h("article", { class: "lcard" },
+      h("div", { class: "lcard-h" },
+        h("h3", { text: listName(l, picks.length) }),
+        state.canWrite ? h("button", { class: "btn ghost small", type: "button", onclick: function () { openListEditor(l); } }, "Edit") : null),
+      picks.length ? h("ol", { class: "rk" }, picks.map(function (e, i) {
+        return h("li", null, h("button", { class: "rk-row", type: "button", title: "Open " + e.title, onclick: function () { jumpTo(e); } },
+          h("span", { class: "rk-n", text: String(i + 1) }),
+          tileNode(e),
+          h("span", { class: "rk-txt" },
+            h("span", { class: "rk-t", text: e.title || "Untitled" }),
+            e.creator ? h("span", { class: "rk-by", text: e.creator }) : null,
+            e.rating > 0 ? h("span", { class: "rating" }, stars(e.rating, 12), h("span", { class: "num", text: e.rating.toFixed(1) })) : null)));
+      })) : h("p", { class: "hint", text: "Nothing on this list yet." }));
+  }
+  function renderLists() {
+    var box = $("#lists"), on = state.medium === "lists";
+    box.hidden = !on;
+    $("#log").hidden = on;
+    $(".find").hidden = on;
+    if (on) { $("#chips").hidden = true; $("#subchips").hidden = true; }
+    if (!on) return;
+    var byId = {}; state.entries.forEach(function (e) { byId[e.id] = e; });
+    var years = {};
+    state.lists.forEach(function (l) { (years[l.year] = years[l.year] || []).push(l); });
+    var ys = Object.keys(years).sort(function (a, b) { return b - a; });
+    var nodes = [];
+    if (state.canWrite && ys.length) nodes.push(h("div", { class: "lists-top" }, h("button", { class: "btn small", type: "button", onclick: function () { openListEditor(null); } }, "+ New list")));
+    if (!ys.length) {
+      nodes.push(h("div", { class: "lists-empty" },
+        h("h2", { text: state.canWrite ? "No lists yet." : "No lists yet." }),
+        h("p", { text: state.canWrite ? "Make a top 10 films or top 10 albums for any year. Pick from what you've already logged." : "Year-end lists show up here. Check back at the end of the year." }),
+        state.canWrite ? h("button", { class: "btn accent", type: "button", onclick: function () { openListEditor(null); } }, "Make a list") : null));
+    }
+    ys.forEach(function (y) {
+      var ls = years[y].sort(function (a, b) { return (a.kind === "film" ? 0 : 1) - (b.kind === "film" ? 0 : 1); });
+      nodes.push(h("section", { class: "yr", "aria-label": y },
+        h("h2", { class: "yr-h", text: y }),
+        h("div", { class: "yr-grid" }, ls.map(function (l) { return listCard(l, byId); }))));
+    });
+    box.replaceChildren.apply(box, nodes);
+  }
+
+  /* list editor */
+  var listDlg = null, lEdit = null, lItems = [], lConfirmDel = false;
+  function lEntry(id) { for (var i = 0; i < state.entries.length; i++) if (state.entries[i].id === id) return state.entries[i]; return null; }
+  function lDraw() {
+    var ol = $("#l-items"), kind = $("#l-kind").value;
+    lItems = lItems.filter(function (id) { var e = lEntry(id); return e && e.medium === kind; });
+    ol.replaceChildren.apply(ol, lItems.map(function (id, i) {
+      var e = lEntry(id);
+      return h("li", null,
+        h("span", { class: "n", text: String(i + 1) }),
+        h("span", { class: "nm" }, e.title, e.creator ? h("small", { text: e.creator }) : null),
+        h("span", { class: "mv" },
+          h("button", { type: "button", "aria-label": "Move up", disabled: i === 0, onclick: function () { lItems.splice(i - 1, 0, lItems.splice(i, 1)[0]); lDraw(); } }, "↑"),
+          h("button", { type: "button", "aria-label": "Move down", disabled: i === lItems.length - 1, onclick: function () { lItems.splice(i + 1, 0, lItems.splice(i, 1)[0]); lDraw(); } }, "↓"),
+          h("button", { type: "button", "aria-label": "Remove", onclick: function () { lItems.splice(i, 1); lDraw(); } }, "✕")));
+    }));
+    $("#l-count").textContent = lItems.length + " of 10" + (lItems.length >= 10 ? ". The list is full; remove one to add another." : ".");
+    lFind();
+  }
+  function lFind() {
+    var box = $("#l-found"), q = $("#l-q").value.trim().toLowerCase(), kind = $("#l-kind").value, y = $("#l-year").value.trim();
+    if (lItems.length >= 10) { box.replaceChildren(); return; }
+    var pool = state.entries.filter(function (e) { return e.medium === kind && lItems.indexOf(e.id) < 0; });
+    if (q) pool = pool.filter(function (e) { return (e.title + " " + e.creator).toLowerCase().indexOf(q) >= 0; });
+    else pool = pool.filter(function (e) { return (e.loggedOn || "").slice(0, 4) === y || (e.released || "").slice(0, 4) === y; });
+    pool.sort(function (a, b) { return (b.rating - a.rating) || a.title.localeCompare(b.title); });
+    var res = pool.slice(0, 12).map(function (e) {
+      return h("button", { type: "button", onclick: function () { if (lItems.length < 10) { lItems.push(e.id); $("#l-q").value = ""; lDraw(); } } },
+        e.title, " ", h("small", { text: [e.creator, e.rating > 0 ? e.rating.toFixed(1) + "★" : ""].filter(Boolean).join(" · ") }));
+    });
+    if (!res.length) res = [h("p", { class: "hint", text: q ? "Nothing in your log matches that." : "Your highest rated " + (kind === "music" ? "albums" : "films") + " from " + (y || "that year") + " show up here. Search to find anything else." })];
+    else if (!q) res.unshift(h("p", { class: "hint", text: "Highest rated from " + y + ". Tap to add, or search for anything else." }));
+    box.replaceChildren.apply(box, res);
+  }
+  function openListEditor(l) {
+    listDlg = listDlg || $("#listDlg");
+    lEdit = l; lConfirmDel = false;
+    lItems = l ? l.items.slice() : [];
+    $("#l-year").value = l ? l.year : String(new Date().getFullYear());
+    $("#l-kind").value = l ? l.kind : "film";
+    $("#l-q").value = ""; $("#l-err").textContent = "";
+    $("#l-del").hidden = !l; $("#l-del").textContent = "Delete list";
+    lDraw();
+    if (typeof listDlg.showModal === "function") listDlg.showModal(); else listDlg.setAttribute("open", "");
+  }
+  function closeListEditor() { if (typeof listDlg.close === "function") listDlg.close(); else listDlg.removeAttribute("open"); }
+  $("#l-kind").addEventListener("change", function () { lDraw(); });
+  $("#l-year").addEventListener("input", lFind);
+  $("#l-q").addEventListener("input", lFind);
+  $("#l-cancel").addEventListener("click", function () { closeListEditor(); });
+  $("#listDlg").addEventListener("click", function (ev) { if (ev.target === ev.currentTarget) closeListEditor(); });
+  $("#listForm").addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var y = $("#l-year").value.trim(), kind = $("#l-kind").value;
+    if (!/^\d{4}$/.test(y)) { $("#l-err").textContent = "Enter a year, like 2026."; return; }
+    if (!lItems.length) { $("#l-err").textContent = "Add at least one pick."; return; }
+    var dupe = state.lists.filter(function (x) { return x.year === y && x.kind === kind && (!lEdit || x.id !== lEdit.id); })[0];
+    if (dupe) { $("#l-err").textContent = "You already have a " + (kind === "music" ? "top albums" : "top films") + " list for " + y + ". Edit that one instead."; return; }
+    var rec = { id: lEdit ? lEdit.id : "list-" + randHex().slice(0, 12), year: y, kind: kind, items: lItems.slice(0, 10), updatedAt: Date.now() };
+    var i = state.lists.findIndex(function (x) { return x.id === rec.id; });
+    if (i >= 0) state.lists[i] = rec; else state.lists.push(rec);
+    if (!saveLocalLists()) { $("#l-err").textContent = "This browser couldn't save the list."; return; }
+    closeListEditor(); render();
+  });
+  $("#l-del").addEventListener("click", function () {
+    if (!lEdit) return;
+    if (!lConfirmDel) { lConfirmDel = true; $("#l-del").textContent = "Tap again to delete"; return; }
+    markDeleted(lEdit.id);
+    state.lists = state.lists.filter(function (x) { return x.id !== lEdit.id; });
+    saveLocalLists(); closeListEditor(); render();
+  });
 
   /* ---------- examples ---------- */
   var clearTimer = null;
@@ -1612,7 +1840,7 @@ a.btn { display: inline-block; text-decoration: none; }
     tree.tree.forEach(function (t) { if (t.type === "blob") existing[t.path] = t.sha; });
     var items = [], wanted = {}, ents = [], uploaded = 0;
     /* merge anything newer on GitHub (like automatic Letterboxd syncs) so publishing never wipes it */
-    var source = state.entries.slice();
+    var source = state.entries.slice(), listsOut = state.lists.slice();
     if (existing["entries.json"]) {
       try {
         pubMsg("Checking for new entries on GitHub...");
@@ -1627,6 +1855,9 @@ a.btn { display: inline-block; text-decoration: none; }
           else if ((r.updatedAt || 0) > (source[idx[r.id]].updatedAt || 0)) { source[idx[r.id]] = r; pulled.push(recOf(r)); }
         });
         if (pulled.length) store.upsertMany(pulled, true);
+        var mlp = mergeLists(state.lists, remote.lists);
+        listsOut = mlp.lists;
+        if (mlp.changed) { state.lists = mlp.lists; saveLocalLists(); }
       } catch (x) { throw new Error("Couldn't read the entries already on GitHub, so nothing was published"); }
     }
     for (var i = 0; i < source.length; i++) {
@@ -1648,7 +1879,7 @@ a.btn { display: inline-block; text-decoration: none; }
         genre: e.genre, rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, updatedAt: e.updatedAt || 0, art: art });
     }
     pubMsg("Saving entries...");
-    var json = JSON.stringify({ app: "watched-and-heard", version: 2, publishedAt: new Date().toISOString(), entries: ents });
+    var json = JSON.stringify({ app: "watched-and-heard", version: 2, publishedAt: new Date().toISOString(), entries: ents, lists: listsOut });
     var jb = await gh(cfg, "POST", "/git/blobs", { content: json, encoding: "utf-8" });
     items.push({ path: "entries.json", mode: "100644", type: "blob", sha: jb.sha });
     var nt = await gh(cfg, "POST", "/git/trees", { base_tree: commit.tree.sha, tree: items });
@@ -1727,6 +1958,7 @@ a.btn { display: inline-block; text-decoration: none; }
       if (res.ok) {
         var data = await res.json();
         if (data && data.app === "watched-and-heard" && Array.isArray(data.entries)) {
+          state.lists = cleanLists(data.lists);
           var art = data.art && typeof data.art === "object" ? data.art : {};
           list = data.entries.filter(function (raw) { return raw && typeof raw === "object"; }).map(function (raw, i) {
             var e = norm(typeof raw.id === "string" ? raw.id : "p" + i, raw), du = e.art ? art[e.art] : "";
@@ -1746,6 +1978,7 @@ a.btn { display: inline-block; text-decoration: none; }
     state.ownerMode = true;
     $("#publishBtn").hidden = false; $("#pubSettingsBtn").hidden = false;
     store = makeLocalStore();
+    state.lists = loadLocalLists();
     try {
       (await idbLoadAll()).forEach(function (r) { if (r[1]) artCache.set(r[0], URL.createObjectURL(r[1])); });
       assets = localAssets;
