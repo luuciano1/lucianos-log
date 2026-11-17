@@ -196,6 +196,18 @@ button:focus-visible, .row:focus-visible { outline: 2px solid var(--ink); outlin
   @keyframes pulse { 50% { opacity: .45; } }
 }
 
+/* likes */
+.like { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 8px 6px 0; background: none; border: 0; color: var(--ink-soft); cursor: pointer; font: 500 12px/1 var(--sans); letter-spacing: .04em; -webkit-tap-highlight-color: transparent; }
+.like svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; transition: transform .15s ease; }
+.like:hover { color: var(--ink); }
+.like.on, .like.on:hover { color: #e0245e; }
+.like.on svg { fill: currentColor; }
+.like:active svg { transform: scale(.82); }
+.like:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.foot .like { margin-top: 0; }
+.foot-r { display: inline-flex; align-items: center; gap: 16px; }
+@media (prefers-reduced-motion: reduce) { .like svg { transition: none; } }
+
 /* year-end lists */
 .lists { display: flex; flex-direction: column; gap: 72px; padding-bottom: 24px; }
 .lists-top { display: flex; justify-content: flex-end; margin-bottom: -40px; }
@@ -512,6 +524,11 @@ a.btn { display: inline-block; text-decoration: none; }
       <label for="p-token">GitHub token</label>
       <input class="in" id="p-token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
       <p class="hint">Use a fine-grained token limited to this repository, with Contents set to Read and write. It is saved in this browser only and sent only to GitHub.</p>
+    </div>
+    <div class="f">
+      <label for="p-likes">Likes server (optional)</label>
+      <input class="in" id="p-likes" type="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://lucianos-log-likes.yourname.workers.dev">
+      <p class="hint">The address of your Cloudflare likes worker. Hearts appear for everyone after your next Publish.</p>
     </div>
     <p class="err" id="pubErr" role="alert"></p>
     <div class="actions">
@@ -982,6 +999,7 @@ a.btn { display: inline-block; text-decoration: none; }
         list.push(recOf(e));
       }
       if (list.length) store.upsertMany(list, true);
+      if (!likes.api && typeof data.likesApi === "string") setLikesApi(data.likesApi);
       var ml = mergeLists(state.lists, data.lists);
       if (ml.changed) { state.lists = ml.lists; saveLocalLists(); render(); }
       var added = list.filter(function (x) { return !have[x.id]; }).length;
@@ -1334,9 +1352,10 @@ a.btn { display: inline-block; text-decoration: none; }
         e.subgenres && e.subgenres.length ? h("p", { class: "subs", text: e.subgenres.join(" · ") }) : null,
         h("div", { class: "foot" },
           h("span", { class: "logged", text: (e.medium === "film" ? "Watched " : "Heard ") + (fmtDate(e.loggedOn) || "date unknown") + " · " + (e.medium === "film" ? (e.again ? "Rewatch" : "First watch") : (e.again ? "Relisten" : "First listen")) }),
-          state.canWrite ? h("button", { class: "btn ghost small", type: "button", onclick: function () { openEditor(e); } }, "Edit") : null));
+          h("span", { class: "foot-r" }, heartBtn(e),
+            state.canWrite ? h("button", { class: "btn ghost small", type: "button", onclick: function () { openEditor(e); } }, "Edit") : null)));
     }
-    return h("li", { class: "entry", "data-id": e.id }, row, body);
+    return h("li", { class: "entry", "data-id": e.id }, row, open ? null : heartBtn(e), body);
   }
 
   function renderList() {
@@ -1361,6 +1380,51 @@ a.btn { display: inline-block; text-decoration: none; }
   }
 
   function render() { renderHead(); renderChips(); renderSubChips(); renderNotes(); renderList(); renderLists(); }
+
+  /* ---------- likes ---------- */
+  var LIKED_KEY = "lucianos-log-liked-v1";
+  var likes = { api: "", counts: {}, mine: new Set() };
+  var HEART = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5s-7.5-4.6-9.6-9.3C.9 7.8 3 4 6.8 4c2.2 0 3.7 1.2 5.2 3 1.5-1.8 3-3 5.2-3C21 4 23.1 7.8 21.6 11.2 19.5 15.9 12 20.5 12 20.5z"/></svg>';
+  try { (JSON.parse(localStorage.getItem(LIKED_KEY) || "[]") || []).forEach(function (id) { if (typeof id === "string") likes.mine.add(id); }); } catch (e) {}
+  function saveMine() { try { localStorage.setItem(LIKED_KEY, JSON.stringify(Array.from(likes.mine))); } catch (e) {} }
+  function setLikesApi(u) {
+    u = String(u || "").trim().replace(/\/+$/, "");
+    if (!/^https:\/\/[^\s"<>]+$/.test(u) || likes.api === u) return;
+    likes.api = u;
+    fetch(u + "/counts").then(function (r) { return r.ok ? r.json() : {}; }).then(function (m) {
+      likes.counts = m && typeof m === "object" ? m : {};
+      renderList(); renderLists();
+    }).catch(function () { renderList(); });
+  }
+  function paintLike(btn, id) {
+    var on = likes.mine.has(id), n = likes.counts[id] || 0;
+    btn.classList.toggle("on", on);
+    btn.setAttribute("aria-pressed", String(on));
+    btn.lastChild.textContent = n ? String(n) : "";
+  }
+  function heartBtn(e) {
+    if (!likes.api) return null;
+    var b = h("button", { class: "like", type: "button", "data-like": e.id, "aria-label": "Like " + (e.title || "this entry"), title: "Like",
+      onclick: function (ev) { ev.stopPropagation(); toggleLike(e.id); } });
+    var icon = document.createElement("span"); icon.innerHTML = HEART; icon.style.display = "inline-flex";
+    b.append(icon, h("span", { class: "like-n" }));
+    paintLike(b, e.id);
+    return b;
+  }
+  function repaintLikes(id) { document.querySelectorAll(".like").forEach(function (b) { if (b.dataset.like === id) paintLike(b, id); }); }
+  function toggleLike(id) {
+    var on = !likes.mine.has(id), before = likes.counts[id] || 0;
+    if (on) likes.mine.add(id); else likes.mine.delete(id);
+    likes.counts[id] = Math.max(0, before + (on ? 1 : -1));
+    saveMine(); repaintLikes(id);
+    fetch(likes.api + "/like", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: id, on: on }) })
+      .then(function (r) { if (!r.ok) throw new Error("http"); return r.json(); })
+      .then(function (d) { if (d && typeof d.count === "number") { likes.counts[id] = d.count; repaintLikes(id); } })
+      .catch(function () {
+        if (on) likes.mine.delete(id); else likes.mine.add(id);
+        likes.counts[id] = before; saveMine(); repaintLikes(id);
+      });
+  }
 
   /* ---------- year-end lists ---------- */
   var LISTS_KEY = "watched-heard-lists-v1";
@@ -1840,7 +1904,7 @@ a.btn { display: inline-block; text-decoration: none; }
     tree.tree.forEach(function (t) { if (t.type === "blob") existing[t.path] = t.sha; });
     var items = [], wanted = {}, ents = [], uploaded = 0;
     /* merge anything newer on GitHub (like automatic Letterboxd syncs) so publishing never wipes it */
-    var source = state.entries.slice(), listsOut = state.lists.slice();
+    var source = state.entries.slice(), listsOut = state.lists.slice(), likesOut = cfg.likesApi || likes.api || "";
     if (existing["entries.json"]) {
       try {
         pubMsg("Checking for new entries on GitHub...");
@@ -1855,6 +1919,7 @@ a.btn { display: inline-block; text-decoration: none; }
           else if ((r.updatedAt || 0) > (source[idx[r.id]].updatedAt || 0)) { source[idx[r.id]] = r; pulled.push(recOf(r)); }
         });
         if (pulled.length) store.upsertMany(pulled, true);
+        if (!likesOut && typeof remote.likesApi === "string") likesOut = remote.likesApi;
         var mlp = mergeLists(state.lists, remote.lists);
         listsOut = mlp.lists;
         if (mlp.changed) { state.lists = mlp.lists; saveLocalLists(); }
@@ -1879,7 +1944,7 @@ a.btn { display: inline-block; text-decoration: none; }
         genre: e.genre, rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, updatedAt: e.updatedAt || 0, art: art });
     }
     pubMsg("Saving entries...");
-    var json = JSON.stringify({ app: "watched-and-heard", version: 2, publishedAt: new Date().toISOString(), entries: ents, lists: listsOut });
+    var json = JSON.stringify({ app: "watched-and-heard", version: 2, publishedAt: new Date().toISOString(), entries: ents, lists: listsOut, likesApi: likesOut });
     var jb = await gh(cfg, "POST", "/git/blobs", { content: json, encoding: "utf-8" });
     items.push({ path: "entries.json", mode: "100644", type: "blob", sha: jb.sha });
     var nt = await gh(cfg, "POST", "/git/trees", { base_tree: commit.tree.sha, tree: items });
@@ -1916,6 +1981,7 @@ a.btn { display: inline-block; text-decoration: none; }
     $("#p-repo").value = cfg.repo || guessRepo();
     $("#p-branch").value = cfg.branch || "main";
     $("#p-token").value = cfg.token || "";
+    $("#p-likes").value = cfg.likesApi || likes.api || "";
     $("#pubErr").textContent = msg || "";
     if (typeof pubDlg.showModal === "function") pubDlg.showModal(); else pubDlg.setAttribute("open", "");
   }
@@ -1926,7 +1992,10 @@ a.btn { display: inline-block; text-decoration: none; }
     var branch = $("#p-branch").value.trim() || "main", token = $("#p-token").value.trim();
     if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) { $("#pubErr").textContent = "Enter the repository as yourname/reponame."; return; }
     if (!token) { $("#pubErr").textContent = "Paste your GitHub token."; return; }
-    if (!savePub({ repo: repo, branch: branch, token: token })) { $("#pubErr").textContent = "This browser couldn't save the settings."; return; }
+    var likesApi = $("#p-likes").value.trim().replace(/\/+$/, "");
+    if (likesApi && !/^https:\/\/[^\s"<>]+$/.test(likesApi)) { $("#pubErr").textContent = "The likes server should be an https:// address."; return; }
+    if (likesApi) setLikesApi(likesApi);
+    if (!savePub({ repo: repo, branch: branch, token: token, likesApi: likesApi })) { $("#pubErr").textContent = "This browser couldn't save the settings."; return; }
     closePubDialog();
     pubMsg("Publish settings saved. Tap Publish when you're ready.");
   });
@@ -1959,6 +2028,7 @@ a.btn { display: inline-block; text-decoration: none; }
         var data = await res.json();
         if (data && data.app === "watched-and-heard" && Array.isArray(data.entries)) {
           state.lists = cleanLists(data.lists);
+          if (typeof data.likesApi === "string") setLikesApi(data.likesApi);
           var art = data.art && typeof data.art === "object" ? data.art : {};
           list = data.entries.filter(function (raw) { return raw && typeof raw === "object"; }).map(function (raw, i) {
             var e = norm(typeof raw.id === "string" ? raw.id : "p" + i, raw), du = e.art ? art[e.art] : "";
@@ -1979,6 +2049,7 @@ a.btn { display: inline-block; text-decoration: none; }
     $("#publishBtn").hidden = false; $("#pubSettingsBtn").hidden = false;
     store = makeLocalStore();
     state.lists = loadLocalLists();
+    try { var pc = loadPub(); if (pc && pc.likesApi) setLikesApi(pc.likesApi); } catch (e) {}
     try {
       (await idbLoadAll()).forEach(function (r) { if (r[1]) artCache.set(r[0], URL.createObjectURL(r[1])); });
       assets = localAssets;
