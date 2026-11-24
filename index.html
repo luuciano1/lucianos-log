@@ -164,6 +164,8 @@ button:focus-visible, .row:focus-visible { outline: 2px solid var(--ink); outlin
 }
 .entry:has(.body) .row:hover .tile { opacity: 1; }
 .entry:has(.body) .title { font-size: clamp(36px, 6vw, 84px); line-height: .92; letter-spacing: -.05em; }
+/* letters like Y, V, W, T and A look indented at big sizes; pull them left so they line up with the artist name */
+.entry:has(.body) .title.opt { margin-left: -.055em; }
 .entry:has(.body) .by { font-size: clamp(17px, 2vw, 22px); color: var(--ink); margin-top: 8px; }
 .entry:has(.body) .stars { --s: 16px; }
 .entry:has(.body) .meta { margin-top: 10px; }
@@ -1344,7 +1346,7 @@ a.btn { display: inline-block; text-decoration: none; }
       onclick: function () { if (state.open.has(e.id)) state.open.delete(e.id); else state.open.add(e.id); renderList(); } },
       tile,
       h("span", { class: "main" },
-        h("span", { class: "title" }, e.title || "Untitled", e.example ? h("span", { class: "badge", text: "Example" }) : null),
+        h("span", { class: "title" + (/^[YVWTAJ"'“‘(]/.test(e.title || "") ? " opt" : "") }, e.title || "Untitled", e.example ? h("span", { class: "badge", text: "Example" }) : null),
         e.creator ? h("span", { class: "by", text: e.creator }) : null,
         h("span", { class: "rating" }, stars(e.rating, 14, e.zero), h("span", { class: "num", text: isRated(e) ? e.rating.toFixed(1) : "Unrated" })),
         meta ? h("span", { class: "meta", text: meta }) : null,
