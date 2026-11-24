@@ -427,7 +427,8 @@ a.btn { display: inline-block; text-decoration: none; }
           <input id="f-rating" type="range" min="0" max="5" step="0.5" value="0" aria-labelledby="f-rating-label">
         </div>
         <span class="rate-out" id="f-rating-out">Unrated</span>
-        <button type="button" class="btn ghost small" id="f-clear-rating">Clear</button>
+        <button type="button" class="btn ghost small" id="f-zero-rating" title="Zero stars">0 stars</button>
+        <button type="button" class="btn ghost small" id="f-clear-rating" title="No rating">Clear</button>
       </div>
     </div>
 
@@ -612,7 +613,7 @@ a.btn { display: inline-block; text-decoration: none; }
     return {
       id: id, medium: d.medium === "film" ? "film" : "music", title: str(d.title), creator: str(d.creator),
       kind: str(d.kind), released: str(d.released) || mg.r || "", genre: str(d.genre) || mg.g || "",
-      subgenres: Array.isArray(d.subgenres) ? d.subgenres.map(str).filter(Boolean) : (mg.s || []).slice(), rating: r, review: str(d.review),
+      subgenres: Array.isArray(d.subgenres) ? d.subgenres.map(str).filter(Boolean) : (mg.s || []).slice(), rating: r, zero: r === 0 && (d.zero === true || /^aoty/.test(id)), review: str(d.review),
       loggedOn: str(d.loggedOn), again: d.again === true, year: /^\d{4}$/.test(str(d.year)) ? str(d.year) : "", createdAt: Number(d.createdAt) || 0, updatedAt: Number(d.updatedAt) || 0, cover: /^https:\/\/[^\s"<>]+$/.test(str(d.cover)) ? str(d.cover) : "", example: d.example === true,
       art: /^[0-9a-f]{32}$/.test(str(d.art)) ? str(d.art) : ""
     };
@@ -660,8 +661,9 @@ a.btn { display: inline-block; text-decoration: none; }
     }
     return t;
   }
-  function stars(r, size) {
-    var s = h("span", { class: "stars", role: "img", "aria-label": (r > 0 ? r + " out of 5 stars" : "Unrated"), vars: { "--r": r } });
+  function isRated(e) { return e.rating > 0 || e.zero === true; }
+  function stars(r, size, zero) {
+    var s = h("span", { class: "stars", role: "img", "aria-label": (r > 0 || zero ? r + " out of 5 stars" : "Unrated"), vars: { "--r": r } });
     if (size) s.style.setProperty("--s", size + "px");
     return s;
   }
@@ -729,7 +731,7 @@ a.btn { display: inline-block; text-decoration: none; }
       if (!id) { missing.push(e.title); return; }
       if (e.art === id) return;
       recs.push({ id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-        rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, art: id });
+        rating: e.rating, zero: !!e.zero, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, art: id });
     });
     if (recs.length) store.upsertMany(recs);
     if (onlyMissing && !recs.length) return 0;
@@ -760,7 +762,7 @@ a.btn { display: inline-block; text-decoration: none; }
   function markDeleted(id) { try { var a = deletedSet(); if (a.indexOf(id) < 0) { a.push(id); localStorage.setItem(DEL_KEY, JSON.stringify(a.slice(-2000))); } } catch (e) {} }
   function recOf(e, art) {
     return { id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-      rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "",
+      rating: e.rating, zero: !!e.zero, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "",
       createdAt: e.createdAt, updatedAt: e.updatedAt || 0, art: art === undefined ? e.art : art };
   }
   function makeLocalStore() {
@@ -866,7 +868,7 @@ a.btn { display: inline-block; text-decoration: none; }
           } catch (err) { /* the site couldn't download it; it will show straight from the link instead */ }
         }
         var rec = { id: id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, art: e.art };
+          rating: e.rating, zero: !!e.zero, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, art: e.art };
         if (e.example) rec.example = true;
         list.push(rec);
       }
@@ -937,7 +939,7 @@ a.btn { display: inline-block; text-decoration: none; }
         var f = films[k], id = lbId(f.key);
         if (have[id]) {
           var o = cur[id], ch = false, rec = { id: o.id, medium: o.medium, title: o.title, creator: o.creator, kind: o.kind, released: o.released, genre: o.genre,
-            rating: o.rating, review: o.review, loggedOn: o.loggedOn, again: o.again, year: o.year || f.year, subgenres: (o.subgenres || []).slice(), cover: o.cover || "", createdAt: o.createdAt, art: o.art };
+            rating: o.rating, zero: !!o.zero, review: o.review, loggedOn: o.loggedOn, again: o.again, year: o.year || f.year, subgenres: (o.subgenres || []).slice(), cover: o.cover || "", createdAt: o.createdAt, art: o.art };
           if (!rec.rating && f.rating) { rec.rating = f.rating; ch = true; }
           if (!rec.review && f.review) { rec.review = f.review; ch = true; }
           if (!rec.again && f.again) { rec.again = true; ch = true; }
@@ -945,7 +947,7 @@ a.btn { display: inline-block; text-decoration: none; }
           if (ch) list.push(rec); else skipped++;
           return;
         }
-        list.push({ id: id, medium: "film", title: f.title, creator: "", kind: "Feature", released: "", genre: "", rating: f.rating,
+        list.push({ id: id, medium: "film", title: f.title, creator: "", kind: "Feature", released: "", genre: "", rating: f.rating, zero: !!f.zero,
           review: f.review, loggedOn: f.logged || today(), again: f.again, year: f.year, subgenres: [], createdAt: t0 + n, art: "" });
       });
       if (list.length) store.upsertMany(list);
@@ -1067,7 +1069,7 @@ a.btn { display: inline-block; text-decoration: none; }
           await localAssets.putWithId(aid, new Blob([b64bytes(b.content)], { type: "image/jpeg" }));
         }
         if (e.art !== aid) list.push({ id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, art: aid });
+          rating: e.rating, zero: !!e.zero, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, art: aid });
         done++;
       }
       if (list.length) store.upsertMany(list); else render();
@@ -1119,7 +1121,7 @@ a.btn { display: inline-block; text-decoration: none; }
           gs = topGenres(ar.genres);
         }
         var rec = { id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, art: e.art };
+          rating: e.rating, zero: !!e.zero, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, art: e.art };
         if (!rec.genre && gs.length) rec.genre = gs.join(", ");
         var fd = full["first-release-date"] || rg["first-release-date"] || "";
         if (!rec.released && /^\d{4}-\d{2}-\d{2}$/.test(fd)) rec.released = fd;
@@ -1183,7 +1185,7 @@ a.btn { display: inline-block; text-decoration: none; }
         if (!hit) { notFound.push(e.title); continue; }
         var d = await tmdbGet(tok, "/" + (hit.tv ? "tv" : "movie") + "/" + hit.id, { append_to_response: hit.tv ? "" : "credits" });
         var rec = { id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released, genre: e.genre,
-          rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, art: e.art };
+          rating: e.rating, zero: !!e.zero, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, art: e.art };
         if (!rec.released) { var rd = hit.tv ? d.first_air_date : d.release_date; if (/^\d{4}-\d{2}-\d{2}$/.test(rd || "")) rec.released = rd; }
         if (!rec.genre && d.genres && d.genres.length) rec.genre = d.genres[0].name;
         if (!rec.creator) {
@@ -1265,7 +1267,7 @@ a.btn { display: inline-block; text-decoration: none; }
   /* ---------- render ---------- */
   function renderHead() {
     var all = state.entries, f = all.filter(function (e) { return e.medium === "film"; }).length, m = all.length - f;
-    var rated = all.filter(function (e) { return e.rating > 0; });
+    var rated = all.filter(isRated);
     var avg = rated.length ? (rated.reduce(function (s, e) { return s + e.rating; }, 0) / rated.length).toFixed(1) : null;
     $("#tally").textContent = !state.loaded ? "Opening the log" : !all.length ? "Nothing logged yet" :
       f + (f === 1 ? " film" : " films") + " · " + m + (m === 1 ? " record" : " records") + (avg ? " · avg " + avg + " of 5" : "");
@@ -1344,7 +1346,7 @@ a.btn { display: inline-block; text-decoration: none; }
       h("span", { class: "main" },
         h("span", { class: "title" }, e.title || "Untitled", e.example ? h("span", { class: "badge", text: "Example" }) : null),
         e.creator ? h("span", { class: "by", text: e.creator }) : null,
-        h("span", { class: "rating" }, stars(e.rating, 14), h("span", { class: "num", text: e.rating > 0 ? e.rating.toFixed(1) : "Unrated" })),
+        h("span", { class: "rating" }, stars(e.rating, 14, e.zero), h("span", { class: "num", text: isRated(e) ? e.rating.toFixed(1) : "Unrated" })),
         meta ? h("span", { class: "meta", text: meta }) : null,
         !open && e.review ? h("span", { class: "excerpt", text: plainReview(e.review) }) : null),
       h("span", { class: "tog", "aria-hidden": "true", text: open ? "–" : "+" }));
@@ -1475,7 +1477,7 @@ a.btn { display: inline-block; text-decoration: none; }
           h("span", { class: "rk-txt" },
             h("span", { class: "rk-t", text: e.title || "Untitled" }),
             e.creator ? h("span", { class: "rk-by", text: e.creator }) : null,
-            e.rating > 0 ? h("span", { class: "rating" }, stars(e.rating, 12), h("span", { class: "num", text: e.rating.toFixed(1) })) : null)));
+            isRated(e) ? h("span", { class: "rating" }, stars(e.rating, 12, e.zero), h("span", { class: "num", text: e.rating.toFixed(1) })) : null)));
       })) : h("p", { class: "hint", text: "Nothing on this list yet." }));
   }
   function renderLists() {
@@ -1534,7 +1536,7 @@ a.btn { display: inline-block; text-decoration: none; }
     pool.sort(function (a, b) { return (b.rating - a.rating) || a.title.localeCompare(b.title); });
     var res = pool.slice(0, 12).map(function (e) {
       return h("button", { type: "button", onclick: function () { if (lItems.length < 10) { lItems.push(e.id); $("#l-q").value = ""; lDraw(); } } },
-        e.title, " ", h("small", { text: [e.creator, e.rating > 0 ? e.rating.toFixed(1) + "★" : ""].filter(Boolean).join(" · ") }));
+        e.title, " ", h("small", { text: [e.creator, isRated(e) ? e.rating.toFixed(1) + "★" : ""].filter(Boolean).join(" · ") }));
     });
     if (!res.length) res = [h("p", { class: "hint", text: q ? "Nothing in your log matches that." : "Your highest rated " + (kind === "music" ? "albums" : "films") + " from " + (y || "that year") + " show up here. Search to find anything else." })];
     else if (!q) res.unshift(h("p", { class: "hint", text: "Highest rated from " + y + ". Tap to add, or search for anything else." }));
@@ -1598,18 +1600,21 @@ a.btn { display: inline-block; text-decoration: none; }
   var dlg = $("#editor"), form = $("#entryForm");
   var rIn = $("#f-rating"), rStars = $("#f-stars"), rOut = $("#f-rating-out"), rBox = $("#rateBox");
 
+  var rZero = false;
   function syncRating() {
     var v = Number(rIn.value) || 0;
+    if (v > 0) rZero = false;
     rStars.style.setProperty("--r", v);
-    var label = v > 0 ? v + " out of 5 stars" : "Unrated";
+    var label = v > 0 || rZero ? v + " out of 5 stars" : "Unrated";
     rStars.setAttribute("aria-label", label);
     rIn.setAttribute("aria-valuetext", label);
-    rOut.textContent = v > 0 ? v.toFixed(1) : "Unrated";
+    rOut.textContent = v > 0 || rZero ? v.toFixed(1) : "Unrated";
   }
   function setFromPointer(ev) {
     var r = rBox.getBoundingClientRect();
     var x = Math.min(Math.max(ev.clientX - r.left, 0), r.width);
     rIn.value = String(Math.ceil(x / (r.width / 10)) / 2);
+    rZero = Number(rIn.value) === 0;
     syncRating();
   }
   var dragging = false;
@@ -1621,8 +1626,9 @@ a.btn { display: inline-block; text-decoration: none; }
   });
   rBox.addEventListener("pointermove", function (ev) { if (dragging) setFromPointer(ev); });
   ["pointerup", "pointercancel"].forEach(function (t) { rBox.addEventListener(t, function () { dragging = false; }); });
-  rIn.addEventListener("input", syncRating);
-  $("#f-clear-rating").addEventListener("click", function () { rIn.value = "0"; syncRating(); });
+  rIn.addEventListener("input", function () { rZero = Number(rIn.value) === 0; syncRating(); });
+  $("#f-clear-rating").addEventListener("click", function () { rIn.value = "0"; rZero = false; syncRating(); });
+  $("#f-zero-rating").addEventListener("click", function () { rIn.value = "0"; rZero = true; syncRating(); });
 
   function currentMedium() { var c = form.querySelector("input[name=medium]:checked"); return c ? c.value : "film"; }
   function setMediumUI(medium, kind) {
@@ -1682,7 +1688,7 @@ a.btn { display: inline-block; text-decoration: none; }
     $("#f-released").value = e ? e.released : "";
     $("#f-genre").value = e ? e.genre : "";
     $("#f-subs").value = e && e.subgenres ? e.subgenres.join(", ") : "";
-    rIn.value = String(e ? e.rating : 0); syncRating();
+    rIn.value = String(e ? e.rating : 0); rZero = !!(e && e.zero && !e.rating); syncRating();
     $("#f-review").value = e ? e.review : "";
     $("#f-logged").value = e ? (e.loggedOn || today()) : today();
     $("#f-again").value = e && e.again ? "again" : "first";
@@ -1723,7 +1729,7 @@ a.btn { display: inline-block; text-decoration: none; }
     var obj = {
       medium: medium, title: title, creator: $("#f-creator").value.trim(), kind: $("#f-kind").value,
       released: $("#f-released").value, genre: $("#f-genre").value.trim(),
-      rating: Number(rIn.value) || 0, review: $("#f-review").value.trim(),
+      rating: Number(rIn.value) || 0, zero: !(Number(rIn.value) > 0) && rZero, review: $("#f-review").value.trim(),
       loggedOn: $("#f-logged").value || today(), again: $("#f-again").value === "again", year: old ? old.year : "", cover: old ? old.cover || "" : "", subgenres: medium === "music" ? $("#f-subs").value.split(",").map(function (x) { return x.trim(); }).filter(Boolean) : [], createdAt: old && old.createdAt ? old.createdAt : Date.now(),
       art: assets ? formArt : (old ? old.art : "")
     };
@@ -1944,7 +1950,7 @@ a.btn { display: inline-block; text-decoration: none; }
       if (art && LB_ART[art] && !has) { /* shown from Letterboxd, no file needed */ }
       else if (art && has) wanted[path] = 1; else art = "";
       ents.push({ id: e.id, medium: e.medium, title: e.title, creator: e.creator, kind: e.kind, released: e.released,
-        genre: e.genre, rating: e.rating, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, updatedAt: e.updatedAt || 0, art: art });
+        genre: e.genre, rating: e.rating, zero: !!e.zero, review: e.review, loggedOn: e.loggedOn, again: e.again, year: e.year, subgenres: (e.subgenres || []).slice(), cover: e.cover || "", createdAt: e.createdAt, updatedAt: e.updatedAt || 0, art: art });
     }
     pubMsg("Saving entries...");
     var json = JSON.stringify({ app: "watched-and-heard", version: 2, publishedAt: new Date().toISOString(), entries: ents, lists: listsOut, likesApi: likesOut });
